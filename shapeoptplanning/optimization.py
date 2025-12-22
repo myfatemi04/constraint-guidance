@@ -253,15 +253,33 @@ def compute_grad(path: Path, map: Map, agent_radius: float, max_velocity: float)
 def main():
     # Start with a simple path, going from (0, 0) to (0, 10) in 5 seconds. Maximum velocity is 2 m/s.
     path = Path(torch.tensor([[0, 0, 5], [0, 10, 0]], dtype=torch.float32))
-    map = Map(
-        torch.tensor(
-            [
-                [0.2, 5.0, 0.5],
-                [-0.2, 8.0, 0.5],
-            ],
-            dtype=torch.float32,
-        )
+    map_A = torch.tensor(
+        [
+            [0.2, 5.0, 0.5],
+            [-0.2, 8.0, 0.5],
+            [-0.8, 2.4, 2.0],
+            [0.6, 7.0, 1.2],
+        ],
+        dtype=torch.float32,
     )
+    map_B = torch.tensor(
+        [
+            [0.2, 5.0, 0.5],
+            [-0.8, 2.4, 2.0],
+            [0.6, 7.0, 1.2],
+        ],
+        dtype=torch.float32,
+    )
+    map_C = torch.tensor(
+        [
+            # [0.2, 5.0, 0.5],
+            [-0.2, 8.0, 0.5],
+            [-0.8, 3.0, 2.0],
+            [0.6, 7.0, 1.2],
+        ],
+        dtype=torch.float32,
+    )
+    map = Map(map_C)
     agent_radius = 0.2
     learning_rate = 0.1
     simplicity_weight = 0.1
@@ -323,7 +341,7 @@ def main():
                         + candidate.compute_simplicity_objective() * simplicity_weight
                     )
 
-                    print(f"Candidate cost: {candidate_cost.item()}")
+                    # print(f"Candidate cost: {candidate_cost.item()}")
                 candidates.append((candidate, candidate_cost))
 
                 print("Candidate costs:")
@@ -398,7 +416,7 @@ def main():
             # )
 
         path = path.apply_gradient(grad, learning_rate, max_velocity)
-        constraint_rho = min(1.0, constraint_rho + 0.03)
+        constraint_rho = min(5.0, constraint_rho + 0.03)
         temperature = max(0.1, temperature * 0.99)
 
 
