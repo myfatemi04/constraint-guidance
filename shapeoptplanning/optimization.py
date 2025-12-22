@@ -102,9 +102,9 @@ class Path:
         new_vertices = torch.cat(
             [self.vertices[:1], middle_vertices, self.vertices[-1:]], dim=0
         ).detach()
-        dx = new_vertices[1:, :2] - new_vertices[:-1, :2]
-        min_dt = torch.norm(dx, dim=-1) / max_velocity
-        new_vertices[1:, 2] = torch.maximum(new_vertices[1:, 2], min_dt)
+        # dx = new_vertices[1:, :2] - new_vertices[:-1, :2]
+        # min_dt = torch.norm(dx, dim=-1) / max_velocity
+        # new_vertices[1:, 2] = torch.maximum(new_vertices[1:, 2], min_dt)
         return Path(new_vertices.detach())
 
 
@@ -270,22 +270,34 @@ def main():
                     learning_rate,
                     max_velocity,
                 )
-                velocity_constraint, collision_constraint, objective = (
-                    compute_objectives(
-                        locally_optimized, map, agent_radius, max_velocity
-                    )
+                (
+                    candidate_velocity_constraint,
+                    candidate_collision_constraint,
+                    candidate_objective,
+                ) = compute_objectives(
+                    locally_optimized, map, agent_radius, max_velocity
                 )
                 candidate_cost = (
-                    velocity_constraint.sum() * constraint_rho
-                    + collision_constraint.sum() * constraint_rho
-                    + objective
+                    candidate_velocity_constraint.sum() * constraint_rho
+                    + candidate_collision_constraint.sum() * constraint_rho
+                    + candidate_objective
                     + candidate.compute_simplicity_objective() * simplicity_weight
                 )
                 candidates.append((candidate, candidate_cost))
 
+                print(constraint_rho)
+                print("Candidate costs:")
                 print(
-                    f"Candidate cost: {candidate_cost.item()} vs. path cost: {path_cost.item()}"
+                    f"Velocity: {candidate_velocity_constraint.sum().item()} vs. {velocity_constraint.sum().item()}"
                 )
+                print(
+                    f"Collision: {candidate_collision_constraint.sum().item()} vs. {collision_constraint.sum().item()}"
+                )
+                print(f"Objective: {candidate_objective.item()} vs. {objective.item()}")
+                print(
+                    f"Simplicity: {candidate.compute_simplicity_objective()} vs. {path.compute_simplicity_objective()}"
+                )
+                print(f"Total: {candidate_cost.item()} vs. {path_cost.item()}")
 
             if candidates:
                 best_candidate, best_cost = min(candidates, key=lambda x: x[1])
@@ -323,7 +335,7 @@ def main():
                 pause_behavior="pause" if (step + 10) < steps else "show",
             )
 
-        path = path.apply_gradient(grad, learning_rate, agent_radius)
+        path = path.apply_gradient(grad, learning_rate, max_velocity)
         constraint_rho = min(10.0, constraint_rho + 0.03)
 
 
