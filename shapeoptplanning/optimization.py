@@ -234,11 +234,12 @@ def main():
         )
     )
     agent_radius = 0.2
-    learning_rate = 0.1
+    learning_rate = 1.0
     simplicity_weight = 1.0
     constraint_rho = 1.0
     max_velocity = 2.0
     steps = 1000
+    temperature = 10.0
 
     for step in range(steps):
         if step % 10 == 0:
@@ -261,14 +262,13 @@ def main():
                     compute_grad(candidate, map, agent_radius, max_velocity)
                 )
 
+                candidate_grad = (
+                    velocity_constraint_grad + collision_constraint_grad
+                ) * constraint_rho + objective_grad
+                candidate_grad = candidate_grad + torch.randn_like(candidate_grad) * 4.0
+
                 locally_optimized = candidate.apply_gradient(
-                    (
-                        (velocity_constraint_grad + collision_constraint_grad)
-                        * constraint_rho
-                        + objective_grad
-                    ),
-                    learning_rate,
-                    max_velocity,
+                    candidate_grad, learning_rate, max_velocity
                 )
                 (
                     candidate_velocity_constraint,
@@ -285,7 +285,6 @@ def main():
                 )
                 candidates.append((candidate, candidate_cost))
 
-                print(constraint_rho)
                 print("Candidate costs:")
                 print(
                     f"Velocity: {candidate_velocity_constraint.sum().item()} vs. {velocity_constraint.sum().item()}"
@@ -301,7 +300,12 @@ def main():
 
             if candidates:
                 best_candidate, best_cost = min(candidates, key=lambda x: x[1])
+                # if len(candidates) == 1:
+                #     print(path_cost - best_cost)
                 if best_cost < path_cost:
+                    #      or torch.exp(
+                    #     (path_cost - best_cost) / temperature
+                    # ) > torch.rand(1):
                     path = best_candidate
 
         # Continuous change.
@@ -311,7 +315,8 @@ def main():
         grad = (
             velocity_constraint_grad + collision_constraint_grad
         ) * constraint_rho + objective_grad
-        grad = grad + torch.randn_like(grad) * 0.01
+        grad = grad + torch.randn_like(grad) * 1.0
+        grad = grad / torch.max(torch.norm(grad), torch.tensor(1.0))
 
         # Print out each constraint.
         # print(f"Velocity constraint: {velocity_constraint.tolist()}")
@@ -327,6 +332,19 @@ def main():
         # print(f"Objective grad norm: {torch.norm(objective_grad).item()}")
 
         if step % 10 == 0:
+            # render(
+            #     map,
+            #     [
+            #         path,
+            #         candidates[-1][0].apply_gradient(
+            #             candidate_grad, learning_rate, max_velocity
+            #         ),
+            #     ],
+            #     ["blue", "green"],
+            #     [grad, candidate_grad],
+            #     pause_behavior="pause" if (step + 10) < steps else "show",
+            # )
+
             render(
                 map,
                 [path],
@@ -336,7 +354,8 @@ def main():
             )
 
         path = path.apply_gradient(grad, learning_rate, max_velocity)
-        constraint_rho = min(10.0, constraint_rho + 0.03)
+        # constraint_rho = min(10.0, constraint_rho + 0.03)
+        temperature = max(0.1, temperature * 0.99)
 
 
 if __name__ == "__main__":
