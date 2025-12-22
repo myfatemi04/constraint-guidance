@@ -95,13 +95,17 @@ class Path:
         else:
             raise ValueError(f"Invalid rewrite: {rewrite}")
 
-    def apply_gradient(self, grad: torch.Tensor, learning_rate: float):
+    def apply_gradient(
+        self, grad: torch.Tensor, learning_rate: float, max_velocity: float
+    ):
         middle_vertices = self.vertices[1:-1] - (learning_rate * grad[1:-1])
-        return Path(
-            torch.cat(
-                [self.vertices[:1], middle_vertices, self.vertices[-1:]], dim=0
-            ).detach()
-        )
+        new_vertices = torch.cat(
+            [self.vertices[:1], middle_vertices, self.vertices[-1:]], dim=0
+        ).detach()
+        dx = new_vertices[1:, :2] - new_vertices[:-1, :2]
+        min_dt = torch.norm(dx, dim=-1) / max_velocity
+        new_vertices[1:, 2] = torch.maximum(new_vertices[1:, 2], min_dt)
+        return Path(new_vertices.detach())
 
 
 class Map:
@@ -185,31 +189,36 @@ def render(
 
 
 def compute_objectives(
-    path: Path, map: Map, agent_radius: float
+    path: Path, map: Map, agent_radius: float, max_velocity: float
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    velocity_constraint = path.compute_velocity_constraint(agent_radius)
+    velocity_constraint = path.compute_velocity_constraint(max_velocity)
     collision_constraint = map.compute_collision_constraint(path, agent_radius)
     objective = path.compute_min_time_objective()
     return velocity_constraint, collision_constraint, objective
 
 
-def compute_grad(
-    path: Path, map: Map, agent_radius: float, constraint_rho: float
-) -> torch.Tensor:
-    path.vertices.requires_grad_()
+def compute_grad(path: Path, map: Map, agent_radius: float, max_velocity: float):
+    path.vertices = path.vertices.detach().requires_grad_()
 
     velocity_constraint, collision_constraint, objective = compute_objectives(
-        path, map, agent_radius
+        path, map, agent_radius, max_velocity
     )
+    velocity_constraint.sum().backward(retain_graph=True)
+    velocity_constraint_grad = path.vertices.grad  # type: ignore
+    assert velocity_constraint_grad is not None
+    path.vertices.grad = None
 
-    loss = velocity_constraint.sum() + collision_constraint.sum()
-    (loss * constraint_rho + objective).backward()
+    collision_constraint.sum().backward(retain_graph=True)
+    collision_constraint_grad = path.vertices.grad  # type: ignore
+    assert collision_constraint_grad is not None
+    path.vertices.grad = None
 
-    grad = path.vertices.grad  # type: ignore
+    objective.backward(retain_graph=True)
+    objective_grad = path.vertices.grad  # type: ignore
+    assert objective_grad is not None
+    path.vertices.grad = None
 
-    assert grad is not None
-
-    return grad
+    return velocity_constraint_grad, collision_constraint_grad, objective_grad
 
 
 def main():
@@ -228,6 +237,7 @@ def main():
     learning_rate = 0.1
     simplicity_weight = 1.0
     constraint_rho = 1.0
+    max_velocity = 2.0
     steps = 1000
 
     for step in range(steps):
@@ -235,7 +245,7 @@ def main():
             # Discrete change.
             rewrites = path.propose_rewrites()
             velocity_constraint, collision_constraint, objective = compute_objectives(
-                path, map, agent_radius
+                path, map, agent_radius, max_velocity
             )
             path_cost = (
                 velocity_constraint.sum() * constraint_rho
@@ -245,15 +255,24 @@ def main():
             )
             candidates = []
 
-            print(collision_constraint.sum().item())
-
             for rewrite in rewrites:
                 candidate = path.apply_rewrite(rewrite)
-                grad = compute_grad(candidate, map, agent_radius, constraint_rho)
+                velocity_constraint_grad, collision_constraint_grad, objective_grad = (
+                    compute_grad(candidate, map, agent_radius, max_velocity)
+                )
 
+                locally_optimized = candidate.apply_gradient(
+                    (
+                        (velocity_constraint_grad + collision_constraint_grad)
+                        * constraint_rho
+                        + objective_grad
+                    ),
+                    learning_rate,
+                    max_velocity,
+                )
                 velocity_constraint, collision_constraint, objective = (
                     compute_objectives(
-                        candidate.apply_gradient(grad, learning_rate), map, agent_radius
+                        locally_optimized, map, agent_radius, max_velocity
                     )
                 )
                 candidate_cost = (
@@ -264,14 +283,36 @@ def main():
                 )
                 candidates.append((candidate, candidate_cost))
 
+                print(
+                    f"Candidate cost: {candidate_cost.item()} vs. path cost: {path_cost.item()}"
+                )
+
             if candidates:
                 best_candidate, best_cost = min(candidates, key=lambda x: x[1])
                 if best_cost < path_cost:
                     path = best_candidate
 
         # Continuous change.
-        grad = compute_grad(path, map, agent_radius, constraint_rho)
+        velocity_constraint_grad, collision_constraint_grad, objective_grad = (
+            compute_grad(path, map, agent_radius, max_velocity)
+        )
+        grad = (
+            velocity_constraint_grad + collision_constraint_grad
+        ) * constraint_rho + objective_grad
         grad = grad + torch.randn_like(grad) * 0.01
+
+        # Print out each constraint.
+        # print(f"Velocity constraint: {velocity_constraint.tolist()}")
+        # print(f"Collision constraint: {collision_constraint.tolist()}")
+        # print(f"Objective: {objective.item()}")
+        # print(f"Simplicity objective: {path.compute_simplicity_objective()}")
+        # print(
+        #     f"Velocity constraint grad norm: {torch.norm(velocity_constraint_grad).item()}"
+        # )
+        # print(
+        #     f"Collision constraint grad norm: {torch.norm(collision_constraint_grad).item()}"
+        # )
+        # print(f"Objective grad norm: {torch.norm(objective_grad).item()}")
 
         if step % 10 == 0:
             render(
@@ -282,7 +323,7 @@ def main():
                 pause_behavior="pause" if (step + 10) < steps else "show",
             )
 
-        path = path.apply_gradient(grad, learning_rate)
+        path = path.apply_gradient(grad, learning_rate, agent_radius)
         constraint_rho = min(10.0, constraint_rho + 0.03)
 
 
