@@ -102,9 +102,15 @@ class Path:
         new_vertices = torch.cat(
             [self.vertices[:1], middle_vertices, self.vertices[-1:]], dim=0
         ).detach()
-        # dx = new_vertices[1:, :2] - new_vertices[:-1, :2]
-        # min_dt = torch.norm(dx, dim=-1) / max_velocity
-        # new_vertices[1:, 2] = torch.maximum(new_vertices[1:, 2], min_dt)
+
+        # Project to feasible region for delta T.
+        distances = torch.norm(new_vertices[1:] - new_vertices[:-1], dim=-1)
+        min_dt = distances / max_velocity
+        new_vertices[:-1, 2] = torch.maximum(new_vertices[:-1, 2], min_dt)
+
+        # new_vertices[:, 2] = torch.maximum(
+        #     new_vertices[:, 2], torch.zeros_like(new_vertices[:, 2])
+        # )
         return Path(new_vertices.detach())
 
 
@@ -118,6 +124,7 @@ class Map:
         for i in range(len(path.vertices) - 1):
             start = path.vertices[i][:2]
             end = path.vertices[i + 1][:2]
+            dt = path.vertices[i][2]
             for obstacle in self.obstacles:
                 obstacle_center = obstacle[:2]
                 obstacle_radius = obstacle[2]
@@ -128,7 +135,7 @@ class Map:
                     (obstacle_radius + agent_radius) ** 2 - squared_distance,
                     torch.zeros_like(squared_distance),
                 )
-                constraints.append(constraint)
+                constraints.append(constraint * dt)
         return torch.stack(constraints).view(
             len(path.vertices) - 1, len(self.obstacles)
         )
@@ -234,15 +241,16 @@ def main():
         )
     )
     agent_radius = 0.2
-    learning_rate = 1.0
-    simplicity_weight = 1.0
-    constraint_rho = 1.0
+    learning_rate = 0.1
+    simplicity_weight = 0.1
+    constraint_rho = 0.1
     max_velocity = 2.0
     steps = 1000
     temperature = 10.0
+    render_freq = 100
 
     for step in range(steps):
-        if step % 10 == 0:
+        if step % 100 == 0:
             # Discrete change.
             rewrites = path.propose_rewrites()
             velocity_constraint, collision_constraint, objective = compute_objectives(
@@ -258,31 +266,40 @@ def main():
 
             for rewrite in rewrites:
                 candidate = path.apply_rewrite(rewrite)
-                velocity_constraint_grad, collision_constraint_grad, objective_grad = (
-                    compute_grad(candidate, map, agent_radius, max_velocity)
-                )
 
-                candidate_grad = (
-                    velocity_constraint_grad + collision_constraint_grad
-                ) * constraint_rho + objective_grad
-                candidate_grad = candidate_grad + torch.randn_like(candidate_grad) * 4.0
+                locally_optimized = candidate
+                for _ in range(100):
+                    (
+                        velocity_constraint_grad,
+                        collision_constraint_grad,
+                        objective_grad,
+                    ) = compute_grad(locally_optimized, map, agent_radius, max_velocity)
 
-                locally_optimized = candidate.apply_gradient(
-                    candidate_grad, learning_rate, max_velocity
-                )
-                (
-                    candidate_velocity_constraint,
-                    candidate_collision_constraint,
-                    candidate_objective,
-                ) = compute_objectives(
-                    locally_optimized, map, agent_radius, max_velocity
-                )
-                candidate_cost = (
-                    candidate_velocity_constraint.sum() * constraint_rho
-                    + candidate_collision_constraint.sum() * constraint_rho
-                    + candidate_objective
-                    + candidate.compute_simplicity_objective() * simplicity_weight
-                )
+                    print(objective_grad)
+
+                    candidate_grad = (
+                        velocity_constraint_grad * 0 + collision_constraint_grad
+                    ) * constraint_rho + objective_grad
+
+                    locally_optimized = locally_optimized.apply_gradient(
+                        candidate_grad, learning_rate, max_velocity
+                    )
+                    (
+                        candidate_velocity_constraint,
+                        candidate_collision_constraint,
+                        candidate_objective,
+                    ) = compute_objectives(
+                        locally_optimized, map, agent_radius, max_velocity
+                    )
+
+                    candidate_cost = (
+                        candidate_velocity_constraint.sum() * 0
+                        + candidate_collision_constraint.sum() * constraint_rho
+                        + candidate_objective
+                        + candidate.compute_simplicity_objective() * simplicity_weight
+                    )
+
+                    print(f"Candidate cost: {candidate_cost.item()}")
                 candidates.append((candidate, candidate_cost))
 
                 print("Candidate costs:")
@@ -313,10 +330,10 @@ def main():
             compute_grad(path, map, agent_radius, max_velocity)
         )
         grad = (
-            velocity_constraint_grad + collision_constraint_grad
+            velocity_constraint_grad * 0 + collision_constraint_grad
         ) * constraint_rho + objective_grad
-        grad = grad + torch.randn_like(grad) * 1.0
-        grad = grad / torch.max(torch.norm(grad), torch.tensor(1.0))
+        # grad = grad + torch.randn_like(grad) * 1.0
+        # grad = grad / torch.max(torch.norm(grad), torch.tensor(1.0))
 
         # Print out each constraint.
         # print(f"Velocity constraint: {velocity_constraint.tolist()}")
@@ -331,30 +348,30 @@ def main():
         # )
         # print(f"Objective grad norm: {torch.norm(objective_grad).item()}")
 
-        if step % 10 == 0:
+        if step % render_freq == 0:
+            render(
+                map,
+                [
+                    path,
+                    candidates[-1][0].apply_gradient(
+                        candidate_grad, learning_rate, max_velocity
+                    ),
+                ],
+                ["blue", "green"],
+                [grad, candidate_grad],
+                pause_behavior="pause" if (step + render_freq) < steps else "show",
+            )
+
             # render(
             #     map,
-            #     [
-            #         path,
-            #         candidates[-1][0].apply_gradient(
-            #             candidate_grad, learning_rate, max_velocity
-            #         ),
-            #     ],
-            #     ["blue", "green"],
-            #     [grad, candidate_grad],
+            #     [path],
+            #     ["blue"],
+            #     [grad],
             #     pause_behavior="pause" if (step + 10) < steps else "show",
             # )
 
-            render(
-                map,
-                [path],
-                ["blue"],
-                [grad],
-                pause_behavior="pause" if (step + 10) < steps else "show",
-            )
-
         path = path.apply_gradient(grad, learning_rate, max_velocity)
-        # constraint_rho = min(10.0, constraint_rho + 0.03)
+        constraint_rho = min(1.0, constraint_rho + 0.03)
         temperature = max(0.1, temperature * 0.99)
 
 
