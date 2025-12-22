@@ -18,11 +18,10 @@ class Path:
         self.vertices = vertices
 
     def compute_velocity_constraint(self, max_velocity: float):
-        dx_square = self.vertices[1:, :2] - self.vertices[:-1, :2]
+        dx_square = (self.vertices[1:, :2] - self.vertices[:-1, :2]).pow(2).sum(dim=-1)
         dt = self.vertices[:-1, 2]
-        speed_squared = (dx_square**2).sum(dim=1) / dt**2
         return torch.maximum(
-            (speed_squared - max_velocity**2) * dt, torch.zeros_like(speed_squared)
+            (dx_square - (max_velocity * dt) ** 2), torch.zeros_like(dx_square)
         )
 
     def compute_min_time_objective(self):
@@ -107,13 +106,11 @@ class Path:
         ).detach()
 
         # Project to feasible region for delta T.
-        distances = torch.norm(new_vertices[1:] - new_vertices[:-1], dim=-1)
-        min_dt = distances / max_velocity
+        # distances = torch.norm(new_vertices[1:] - new_vertices[:-1], dim=-1)
+        # min_dt = distances / max_velocity
+        min_dt = torch.zeros_like(new_vertices[:-1, 2])
         new_vertices[:-1, 2] = torch.maximum(new_vertices[:-1, 2], min_dt)
 
-        # new_vertices[:, 2] = torch.maximum(
-        #     new_vertices[:, 2], torch.zeros_like(new_vertices[:, 2])
-        # )
         return Path(new_vertices.detach())
 
 
@@ -127,6 +124,7 @@ class Map:
         for i in range(len(path.vertices) - 1):
             start = path.vertices[i][:2]
             end = path.vertices[i + 1][:2]
+            dx = (end - start).pow(2).sum(dim=-1).pow(0.5)
             dt = path.vertices[i][2]
             for obstacle in self.obstacles:
                 obstacle_center = obstacle[:2]
@@ -138,7 +136,7 @@ class Map:
                     (obstacle_radius + agent_radius) ** 2 - squared_distance,
                     torch.zeros_like(squared_distance),
                 )
-                constraints.append(constraint * dt)
+                constraints.append(constraint * dx)
         return torch.stack(constraints).view(
             len(path.vertices) - 1, len(self.obstacles)
         )
@@ -373,24 +371,10 @@ def main():
         velocity_constraint_grad, collision_constraint_grad, objective_grad = (
             compute_grad(path, map, agent_radius, max_velocity)
         )
+
         grad = (
             velocity_constraint_grad * 0 + collision_constraint_grad
         ) * constraint_rho + objective_grad
-        # grad = grad + torch.randn_like(grad) * 1.0
-        # grad = grad / torch.max(torch.norm(grad), torch.tensor(1.0))
-
-        # Print out each constraint.
-        # print(f"Velocity constraint: {velocity_constraint.tolist()}")
-        # print(f"Collision constraint: {collision_constraint.tolist()}")
-        # print(f"Objective: {objective.item()}")
-        # print(f"Simplicity objective: {path.compute_simplicity_objective()}")
-        # print(
-        #     f"Velocity constraint grad norm: {torch.norm(velocity_constraint_grad).item()}"
-        # )
-        # print(
-        #     f"Collision constraint grad norm: {torch.norm(collision_constraint_grad).item()}"
-        # )
-        # print(f"Objective grad norm: {torch.norm(objective_grad).item()}")
 
         if step % render_freq == 0:
             render(
