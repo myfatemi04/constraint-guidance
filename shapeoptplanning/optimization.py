@@ -28,6 +28,9 @@ class Path:
     def compute_min_time_objective(self):
         return self.vertices[:-1, 2].sum()  # ignore the last vertex, it's the end time
 
+    def compute_min_distance_objective(self):
+        return (self.vertices[1:, :2] - self.vertices[:-1, :2]).norm(dim=-1).sum()
+
     def compute_simplicity_objective(self):
         return len(self.vertices) - 2
 
@@ -147,6 +150,7 @@ def render(
     colors: list[str],
     path_grads: list[torch.Tensor | None] | None = None,
     pause_behavior: Literal["show", "pause"] = "show",
+    agent_radius: float = 0.2,
 ):
     plt.figure()
 
@@ -175,7 +179,14 @@ def render(
 
         # Draw circles for path keypoints.
         for t, vertex in enumerate(vertices):
-            plt.scatter(vertex[0], vertex[1], color=colors[i], s=10)
+            plt.gca().add_patch(
+                patches.Circle(
+                    (vertex[0].item(), vertex[1].item()),
+                    agent_radius,
+                    color=colors[i],
+                    alpha=0.5,
+                )
+            )
 
             if grad is not None:
                 plt.quiver(
@@ -195,21 +206,28 @@ def render(
     plt.close()
 
 
-def compute_objectives(
-    path: Path, map: Map, agent_radius: float, max_velocity: float
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def compute_objectives(path: Path, map: Map, agent_radius: float, max_velocity: float):
     velocity_constraint = path.compute_velocity_constraint(max_velocity)
     collision_constraint = map.compute_collision_constraint(path, agent_radius)
-    objective = path.compute_min_time_objective()
-    return velocity_constraint, collision_constraint, objective
+    continuous_objective = path.compute_min_distance_objective()
+    discrete_objective = path.compute_simplicity_objective()
+    return (
+        velocity_constraint,
+        collision_constraint,
+        continuous_objective,
+        discrete_objective,
+    )
 
 
 def compute_grad(path: Path, map: Map, agent_radius: float, max_velocity: float):
     path.vertices = path.vertices.detach().requires_grad_()
 
-    velocity_constraint, collision_constraint, objective = compute_objectives(
-        path, map, agent_radius, max_velocity
-    )
+    (
+        velocity_constraint,
+        collision_constraint,
+        continuous_objective,
+        discrete_objective,
+    ) = compute_objectives(path, map, agent_radius, max_velocity)
     velocity_constraint.sum().backward(retain_graph=True)
     velocity_constraint_grad = path.vertices.grad  # type: ignore
     assert velocity_constraint_grad is not None
@@ -220,12 +238,16 @@ def compute_grad(path: Path, map: Map, agent_radius: float, max_velocity: float)
     assert collision_constraint_grad is not None
     path.vertices.grad = None
 
-    objective.backward(retain_graph=True)
-    objective_grad = path.vertices.grad  # type: ignore
-    assert objective_grad is not None
+    continuous_objective.backward(retain_graph=True)
+    continuous_objective_grad = path.vertices.grad  # type: ignore
+    assert continuous_objective_grad is not None
     path.vertices.grad = None
 
-    return velocity_constraint_grad, collision_constraint_grad, objective_grad
+    return (
+        velocity_constraint_grad,
+        collision_constraint_grad,
+        continuous_objective_grad,
+    )
 
 
 def main():
@@ -253,13 +275,16 @@ def main():
         if step % 100 == 0:
             # Discrete change.
             rewrites = path.propose_rewrites()
-            velocity_constraint, collision_constraint, objective = compute_objectives(
-                path, map, agent_radius, max_velocity
-            )
+            (
+                velocity_constraint,
+                collision_constraint,
+                continuous_objective,
+                discrete_objective,
+            ) = compute_objectives(path, map, agent_radius, max_velocity)
             path_cost = (
                 velocity_constraint.sum() * constraint_rho
                 + collision_constraint.sum() * constraint_rho
-                + objective
+                + continuous_objective
                 + path.compute_simplicity_objective() * simplicity_weight
             )
             candidates = []
@@ -275,8 +300,6 @@ def main():
                         objective_grad,
                     ) = compute_grad(locally_optimized, map, agent_radius, max_velocity)
 
-                    print(objective_grad)
-
                     candidate_grad = (
                         velocity_constraint_grad * 0 + collision_constraint_grad
                     ) * constraint_rho + objective_grad
@@ -288,6 +311,7 @@ def main():
                         candidate_velocity_constraint,
                         candidate_collision_constraint,
                         candidate_objective,
+                        candidate_discrete_objective,
                     ) = compute_objectives(
                         locally_optimized, map, agent_radius, max_velocity
                     )
@@ -309,7 +333,9 @@ def main():
                 print(
                     f"Collision: {candidate_collision_constraint.sum().item()} vs. {collision_constraint.sum().item()}"
                 )
-                print(f"Objective: {candidate_objective.item()} vs. {objective.item()}")
+                print(
+                    f"Objective: {candidate_objective.item()} vs. {continuous_objective.item()}"
+                )
                 print(
                     f"Simplicity: {candidate.compute_simplicity_objective()} vs. {path.compute_simplicity_objective()}"
                 )
@@ -360,6 +386,7 @@ def main():
                 ["blue", "green"],
                 [grad, candidate_grad],
                 pause_behavior="pause" if (step + render_freq) < steps else "show",
+                agent_radius=agent_radius,
             )
 
             # render(
