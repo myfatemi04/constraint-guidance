@@ -340,6 +340,10 @@ def main():
         print("Objective:", objective_grad)
         print("Constraint Rho:", constraint_rho)
         print("Total:", grad)
+        distances = (path.vertices[1:, :2] - path.vertices[:-1, :2]).norm(dim=-1)
+        velocities = distances / path.vertices[:-1, 2]
+        print("Distances:", distances)
+        print("Velocities:", velocities)
 
     for step in range(steps):
         if step % rewrite_freq == 0:
@@ -407,20 +411,20 @@ def main():
                 )
                 candidates.append((candidate, candidate_cost))
 
-                # print("Candidate costs:")
-                # print(
-                #     f"Velocity: {candidate_velocity_constraint.sum().item()} vs. {velocity_constraint.sum().item()}"
-                # )
-                # print(
-                #     f"Collision: {candidate_collision_constraint.sum().item()} vs. {collision_constraint.sum().item()}"
-                # )
-                # print(
-                #     f"Objective: {candidate_objective.item()} vs. {continuous_objective.item()}"
-                # )
-                # print(
-                #     f"Simplicity: {candidate.compute_simplicity_objective()} vs. {path.compute_simplicity_objective()}"
-                # )
-                # print(f"Total: {candidate_cost.item()} vs. {path_cost.item()}")
+                print("Candidate costs:")
+                print(
+                    f"Velocity: {candidate_velocity_constraint.sum().item()} vs. {velocity_constraint.sum().item()}"
+                )
+                print(
+                    f"Collision: {candidate_collision_constraint.sum().item()} vs. {collision_constraint.sum().item()}"
+                )
+                print(
+                    f"Objective: {candidate_objective.item()} vs. {continuous_objective.item()}"
+                )
+                print(
+                    f"Simplicity: {candidate.compute_simplicity_objective()} vs. {path.compute_simplicity_objective()}"
+                )
+                print(f"Total: {candidate_cost.item()} vs. {path_cost.item()}")
 
             if candidates:
                 best_candidate, best_cost = min(candidates, key=lambda x: x[1])
@@ -455,7 +459,7 @@ def main():
 
         before = path.compute_min_time_objective()
         path = path.apply_gradient(grad, learning_rate, max_velocity)
-        constraint_rho = min(5.0, constraint_rho + 0.03)
+        constraint_rho = min(20.0, constraint_rho + 0.03)
         temperature = max(0.1, temperature * 0.99)
 
         after = path.compute_min_time_objective()
