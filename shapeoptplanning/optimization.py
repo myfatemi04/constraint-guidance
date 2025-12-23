@@ -200,7 +200,7 @@ def render(
     if pause_behavior == "show":
         plt.show()
     elif pause_behavior == "pause":
-        plt.pause(0.02)
+        plt.pause(0.1)
     plt.close()
 
 
@@ -277,18 +277,19 @@ def main():
         ],
         dtype=torch.float32,
     )
-    map = Map(map_C)
+    map = Map(map_B)
     agent_radius = 0.2
-    learning_rate = 0.1
+    learning_rate = 0.05
     simplicity_weight = 0.1
     constraint_rho = 0.1
     max_velocity = 2.0
-    steps = 1000
+    steps = 500
     temperature = 10.0
-    render_freq = 100
+    render_freq = 10
+    rewrite_freq = 10
 
     for step in range(steps):
-        if step % 100 == 0:
+        if step % rewrite_freq == 0:
             # Discrete change.
             rewrites = path.propose_rewrites()
             (
@@ -309,7 +310,7 @@ def main():
                 candidate = path.apply_rewrite(rewrite)
 
                 locally_optimized = candidate
-                for _ in range(100):
+                for _ in range(3):
                     (
                         velocity_constraint_grad,
                         collision_constraint_grad,
@@ -317,7 +318,7 @@ def main():
                     ) = compute_grad(locally_optimized, map, agent_radius, max_velocity)
 
                     candidate_grad = (
-                        velocity_constraint_grad * 0 + collision_constraint_grad
+                        velocity_constraint_grad + collision_constraint_grad
                     ) * constraint_rho + objective_grad
 
                     locally_optimized = locally_optimized.apply_gradient(
@@ -333,7 +334,7 @@ def main():
                     )
 
                     candidate_cost = (
-                        candidate_velocity_constraint.sum() * 0
+                        candidate_velocity_constraint.sum() * constraint_rho
                         + candidate_collision_constraint.sum() * constraint_rho
                         + candidate_objective
                         + candidate.compute_simplicity_objective() * simplicity_weight
@@ -373,7 +374,7 @@ def main():
         )
 
         grad = (
-            velocity_constraint_grad * 0 + collision_constraint_grad
+            velocity_constraint_grad + collision_constraint_grad
         ) * constraint_rho + objective_grad
 
         if step % render_freq == 0:
@@ -387,21 +388,22 @@ def main():
                 ],
                 ["blue", "green"],
                 [grad, candidate_grad],
-                pause_behavior="pause" if (step + render_freq) < steps else "show",
+                pause_behavior="pause",
                 agent_radius=agent_radius,
             )
-
-            # render(
-            #     map,
-            #     [path],
-            #     ["blue"],
-            #     [grad],
-            #     pause_behavior="pause" if (step + 10) < steps else "show",
-            # )
 
         path = path.apply_gradient(grad, learning_rate, max_velocity)
         constraint_rho = min(5.0, constraint_rho + 0.03)
         temperature = max(0.1, temperature * 0.99)
+
+    render(
+        map,
+        [path],
+        ["blue"],
+        [grad],
+        pause_behavior="show",
+        agent_radius=agent_radius,
+    )
 
 
 if __name__ == "__main__":
