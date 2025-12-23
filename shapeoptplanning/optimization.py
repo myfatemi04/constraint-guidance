@@ -277,7 +277,18 @@ def main():
         ],
         dtype=torch.float32,
     )
-    map = Map(map_B)
+    map_D = torch.tensor(
+        [
+            # [0.2, 5.0, 0.5],
+            [-0.2, 8.0, 0.5],
+            [-0.8, 3.0, 2.0],
+            [0.6, 7.0, 1.2],
+            [-3, 6.0, 2.0],
+            [2.2, 6.0, 1.5],
+        ],
+        dtype=torch.float32,
+    )
+    map = Map(map_D)
     agent_radius = 0.2
     learning_rate = 0.05
     simplicity_weight = 0.1
@@ -333,39 +344,32 @@ def main():
                         locally_optimized, map, agent_radius, max_velocity
                     )
 
-                    candidate_cost = (
-                        candidate_velocity_constraint.sum() * constraint_rho
-                        + candidate_collision_constraint.sum() * constraint_rho
-                        + candidate_objective
-                        + candidate.compute_simplicity_objective() * simplicity_weight
-                    )
-
-                    # print(f"Candidate cost: {candidate_cost.item()}")
+                candidate_cost = (
+                    candidate_velocity_constraint.sum() * constraint_rho
+                    + candidate_collision_constraint.sum() * constraint_rho
+                    + candidate_objective
+                    + candidate.compute_simplicity_objective() * simplicity_weight
+                )
                 candidates.append((candidate, candidate_cost))
 
-                print("Candidate costs:")
-                print(
-                    f"Velocity: {candidate_velocity_constraint.sum().item()} vs. {velocity_constraint.sum().item()}"
-                )
-                print(
-                    f"Collision: {candidate_collision_constraint.sum().item()} vs. {collision_constraint.sum().item()}"
-                )
-                print(
-                    f"Objective: {candidate_objective.item()} vs. {continuous_objective.item()}"
-                )
-                print(
-                    f"Simplicity: {candidate.compute_simplicity_objective()} vs. {path.compute_simplicity_objective()}"
-                )
-                print(f"Total: {candidate_cost.item()} vs. {path_cost.item()}")
+                # print("Candidate costs:")
+                # print(
+                #     f"Velocity: {candidate_velocity_constraint.sum().item()} vs. {velocity_constraint.sum().item()}"
+                # )
+                # print(
+                #     f"Collision: {candidate_collision_constraint.sum().item()} vs. {collision_constraint.sum().item()}"
+                # )
+                # print(
+                #     f"Objective: {candidate_objective.item()} vs. {continuous_objective.item()}"
+                # )
+                # print(
+                #     f"Simplicity: {candidate.compute_simplicity_objective()} vs. {path.compute_simplicity_objective()}"
+                # )
+                # print(f"Total: {candidate_cost.item()} vs. {path_cost.item()}")
 
             if candidates:
                 best_candidate, best_cost = min(candidates, key=lambda x: x[1])
-                # if len(candidates) == 1:
-                #     print(path_cost - best_cost)
                 if best_cost < path_cost:
-                    #      or torch.exp(
-                    #     (path_cost - best_cost) / temperature
-                    # ) > torch.rand(1):
                     path = best_candidate
 
         # Continuous change.
@@ -377,7 +381,7 @@ def main():
             velocity_constraint_grad + collision_constraint_grad
         ) * constraint_rho + objective_grad
 
-        if step % render_freq == 0:
+        if step % render_freq == 0 and step >= 250:
             render(
                 map,
                 [
@@ -388,13 +392,27 @@ def main():
                 ],
                 ["blue", "green"],
                 [grad, candidate_grad],
-                pause_behavior="pause",
+                # pause_behavior="pause",
+                pause_behavior="show",
                 agent_radius=agent_radius,
             )
 
+        before = path.compute_min_distance_objective()
         path = path.apply_gradient(grad, learning_rate, max_velocity)
         constraint_rho = min(5.0, constraint_rho + 0.03)
         temperature = max(0.1, temperature * 0.99)
+
+        after = path.compute_min_distance_objective()
+
+        print(f"{step} Distance: {before} -> {after}")
+
+        if step == 259:
+            print("Grads:")
+            print("Velocity:", velocity_constraint_grad)
+            print("Collision:", collision_constraint_grad)
+            print("Objective:", objective_grad)
+            print("Constraint Rho:", constraint_rho)
+            print("Total:", grad)
 
     render(
         map,
