@@ -139,17 +139,36 @@ class Map:
             start = path.vertices[i][:2]
             end = path.vertices[i + 1][:2]
             dx = (end - start).pow(2).sum(dim=-1).pow(0.5)
+
+            if dx.isnan():
+                raise ValueError(
+                    "NaN detected in dx. start:",
+                    start,
+                    "end:",
+                    end,
+                    "(end-start).pow(2).sum(dim=-1):",
+                    (end - start).pow(2).sum(dim=-1),
+                )
+
             for obstacle in self.obstacles:
                 obstacle_center = obstacle[:2]
                 obstacle_radius = obstacle[2]
                 squared_distance = squared_distance_to_line_segment(
                     start, end, obstacle_center
                 )
+                if squared_distance.isnan():
+                    raise ValueError("NaN detected in compute_collision_constraint")
+
                 constraint = torch.maximum(
                     (obstacle_radius + agent_radius) ** 2 - squared_distance,
                     torch.zeros_like(squared_distance),
                 )
                 constraints.append(constraint * dx)
+                if constraint.isnan():
+                    raise ValueError(
+                        "NaN detected in constraint. But this should have been caught."
+                    )
+
         return torch.stack(constraints).view(
             len(path.vertices) - 1, len(self.obstacles)
         )
@@ -353,6 +372,19 @@ def main():
                     candidate_grad = (
                         velocity_constraint_grad + collision_constraint_grad
                     ) * constraint_rho + objective_grad
+
+                    if collision_constraint_grad.isnan().any():
+                        raise ValueError(
+                            "NaN detected in collision_constraint_grad in locally optimized path"
+                        )
+                    if velocity_constraint_grad.isnan().any():
+                        raise ValueError(
+                            "NaN detected in velocity_constraint_grad in locally optimized path"
+                        )
+                    if objective_grad.isnan().any():
+                        raise ValueError(
+                            "NaN detected in objective_grad in locally optimized path"
+                        )
 
                     locally_optimized = locally_optimized.apply_gradient(
                         candidate_grad, learning_rate, max_velocity
