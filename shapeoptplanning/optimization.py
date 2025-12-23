@@ -139,6 +139,7 @@ class Map:
             start = path.vertices[i][:2]
             end = path.vertices[i + 1][:2]
             dx = (end - start).pow(2).sum(dim=-1).pow(0.5)
+            dt = path.vertices[i][2]
 
             if dx.isnan():
                 raise ValueError(
@@ -163,7 +164,7 @@ class Map:
                     (obstacle_radius + agent_radius) ** 2 - squared_distance,
                     torch.zeros_like(squared_distance),
                 )
-                constraints.append(constraint * dx)
+                constraints.append(constraint * dt)
                 if constraint.isnan():
                     raise ValueError(
                         "NaN detected in constraint. But this should have been caught."
