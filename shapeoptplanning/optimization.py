@@ -5,10 +5,24 @@ import matplotlib.patches as patches
 
 
 def squared_distance_to_line_segment(x1, x2, y):
-    s = torch.clamp(
-        ((y - x1) * (x2 - x1)).sum(dim=-1) / ((x2 - x1) ** 2).sum(dim=-1), 0, 1
-    ).detach()
+    numer = ((y - x1) * (x2 - x1)).sum(dim=-1)
+    denom = ((x2 - x1) ** 2).sum(dim=-1) + 1e-6
+    s = torch.clamp(numer / denom, 0, 1).detach()
     xs = x1 + s * (x2 - x1)
+    if s.isnan():
+        print(
+            "NaN detected in squared_distance_to_line_segment. numerator:",
+            numer,
+            "denominator:",
+            denom,
+            "x2:",
+            x2,
+            "x1:",
+            x1,
+            "y:",
+            y,
+        )
+        assert False
     return (xs - y).pow(2).sum(dim=-1)
 
 
@@ -125,7 +139,6 @@ class Map:
             start = path.vertices[i][:2]
             end = path.vertices[i + 1][:2]
             dx = (end - start).pow(2).sum(dim=-1).pow(0.5)
-            dt = path.vertices[i][2]
             for obstacle in self.obstacles:
                 obstacle_center = obstacle[:2]
                 obstacle_radius = obstacle[2]
@@ -207,7 +220,8 @@ def render(
 def compute_objectives(path: Path, map: Map, agent_radius: float, max_velocity: float):
     velocity_constraint = path.compute_velocity_constraint(max_velocity)
     collision_constraint = map.compute_collision_constraint(path, agent_radius)
-    continuous_objective = path.compute_min_distance_objective()
+    continuous_objective = path.compute_min_time_objective()
+    # continuous_objective = path.compute_min_distance_objective()
     discrete_objective = path.compute_simplicity_objective()
     return (
         velocity_constraint,
@@ -299,6 +313,14 @@ def main():
     render_freq = 10
     rewrite_freq = 10
 
+    def print_info():
+        print("Grads:")
+        print("Velocity:", velocity_constraint_grad)
+        print("Collision:", collision_constraint_grad)
+        print("Objective:", objective_grad)
+        print("Constraint Rho:", constraint_rho)
+        print("Total:", grad)
+
     for step in range(steps):
         if step % rewrite_freq == 0:
             # Discrete change.
@@ -381,7 +403,8 @@ def main():
             velocity_constraint_grad + collision_constraint_grad
         ) * constraint_rho + objective_grad
 
-        if step % render_freq == 0 and step >= 250:
+        # if step % render_freq == 0 and step >= 250:
+        if step % render_freq == 0 and step >= 200:
             render(
                 map,
                 [
@@ -397,22 +420,23 @@ def main():
                 agent_radius=agent_radius,
             )
 
-        before = path.compute_min_distance_objective()
+        before = path.compute_min_time_objective()
         path = path.apply_gradient(grad, learning_rate, max_velocity)
         constraint_rho = min(5.0, constraint_rho + 0.03)
         temperature = max(0.1, temperature * 0.99)
 
-        after = path.compute_min_distance_objective()
+        after = path.compute_min_time_objective()
 
-        print(f"{step} Distance: {before} -> {after}")
+        print(f"{step} Time: {before} -> {after}")
 
-        if step == 259:
-            print("Grads:")
-            print("Velocity:", velocity_constraint_grad)
-            print("Collision:", collision_constraint_grad)
-            print("Objective:", objective_grad)
-            print("Constraint Rho:", constraint_rho)
-            print("Total:", grad)
+        if path.vertices.isnan().any() or after > 100:
+            print("NaN detected, stopping.")
+            print_info()
+            break
+
+        # Use this with the min-time objective.
+        # if step == 259:
+        #     print_info()
 
     render(
         map,
