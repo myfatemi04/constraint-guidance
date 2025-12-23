@@ -332,6 +332,10 @@ def main():
     temperature = 10.0
     render_freq = 10
     rewrite_freq = 10
+    velocity_grad_hist = []
+    collision_grad_hist = []
+    objective_grad_hist = []
+    simplicity_hist = []
 
     def print_info():
         print("Grads:")
@@ -471,6 +475,11 @@ def main():
             print_info()
             break
 
+        velocity_grad_hist.append(velocity_constraint_grad.norm().item())
+        collision_grad_hist.append(collision_constraint_grad.norm().item())
+        objective_grad_hist.append(objective_grad.norm().item())
+        simplicity_hist.append(path.compute_simplicity_objective())
+
         # Use this with the min-time objective.
         # if step == 259:
         #     print_info()
@@ -483,6 +492,21 @@ def main():
         pause_behavior="show",
         agent_radius=agent_radius,
     )
+
+    plt.subplot(2, 2, 1)
+    plt.title("Velocity Grad")
+    plt.plot(velocity_grad_hist)
+    plt.subplot(2, 2, 2)
+    plt.title("Collision Grad")
+    plt.plot(collision_grad_hist)
+    plt.subplot(2, 2, 3)
+    plt.title("Objective Grad")
+    plt.plot(objective_grad_hist)
+    plt.subplot(2, 2, 4)
+    plt.title("Simplicity")
+    plt.plot(simplicity_hist)
+    plt.tight_layout()
+    plt.show()
 
 
 if __name__ == "__main__":
