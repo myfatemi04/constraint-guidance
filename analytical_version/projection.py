@@ -687,80 +687,46 @@ def _convert():
 
 def main():
     import json
+    import tqdm
 
     with open("instances_data/instances_dense.json", "r") as f:
         data = json.load(f)
 
     problem = Problem.from_json(data[0])
-    # alm_result = solve_alm(
-    #     problem, rho=5, rho_factor=1.5, num_alm_iterations=50, tolerance=1e-3
-    # )
-    # sol = alm_result.step_results[-1].sol
-
-    test_sol = SolutionValue(
+    sol = SolutionValue(
         agent_agent_distances=torch.zeros((64, problem.num_agents, problem.num_agents)),
         agent_obstacle_distances=torch.zeros(
             (64, problem.num_agents, problem.num_obstacles)
         ),
-        agent_positions=torch.randn((64, problem.num_agents, 2), requires_grad=True),
+        agent_positions=torch.randn((8, problem.num_agents, 2), requires_grad=True),
     )
 
-    import tqdm
+    opt = torch.optim.Adam([sol.agent_positions], lr=0.1)
 
-    for i in tqdm.tqdm(range(100)):
-        constr = problem.get_constraints(test_sol)
-
-        speed_slack = 0
-
-        for k in constr.agent_start_positions:
-            sp_err = constr.agent_start_positions[k].implied_slack.pow(2)
-            (sp_err * 100).backward()
-            er_err = constr.agent_end_positions[k].implied_slack.pow(2)
-            (er_err * 100).backward()
-        # for k in constr.speed:
-        #     if constr.speed[k].implied_slack < 0:
-        #         constr.speed[k].implied_slack.pow(2).backward(retain_graph=True)
-        #         constr.speed[k].implied_slack.backward()
-        #         speed_slack += constr.speed[k].implied_slack.pow(2).item()
-        dist_obj = problem.evaluate_distance_objective(test_sol)
-        dist_obj.backward()
-
+    for i in tqdm.tqdm(range(500)):
+        energy = (
+            (sol.agent_positions[1:, :, :] - sol.agent_positions[:-1, :, :])
+            .pow(2)
+            .sum()
+        )
+        opt.zero_grad()
+        energy.backward()
+        opt.step()
         with torch.no_grad():
-            test_sol.agent_positions -= (
-                0.3
-                * (0.01 / 0.3) ** (i / 100)
-                * torch.clamp(test_sol.agent_positions.grad, min=-1, max=1)
+            sol.agent_positions[0, :, :] = torch.from_numpy(
+                problem.agent_start_positions
             )
-            test_sol.agent_positions += 0.01 * torch.randn_like(
-                test_sol.agent_positions
+            sol.agent_positions[-1, :, :] = torch.from_numpy(
+                problem.agent_end_positions
             )
-            test_sol.agent_positions.grad.zero_()
 
-        print(speed_slack, dist_obj.item())
-    sol = test_sol
+        if (i + 1) % 500 == 0:
+            plt.clf()
+            problem.visualize(sol, plt.gca())
+            plt.pause(0.01)
 
-    # Evaluate objective.
-    # print(
-    #     problem.evaluate_distance_objective(test_sol),
-    #     constr.agent_start_positions,
-    # )
-
-    # sol2 = SolutionValue(
-    #     agent_agent_distances=np.zeros((64, problem.num_agents, problem.num_agents)),
-    #     agent_obstacle_distances=np.zeros(
-    #         (64, problem.num_agents, problem.num_obstacles)
-    #     ),
-    #     agent_positions=np.linspace(
-    #         problem.agent_start_positions,
-    #         problem.agent_end_positions,
-    #         num=64,
-    #     ),
-    # )
-
-    # sol = sol2
-
+    plt.clf()
     problem.visualize(sol, plt.gca())
-    print(problem.evaluate_distance_objective(sol))
     plt.show()
 
 
