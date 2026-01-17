@@ -389,12 +389,7 @@ def compute_all_signed_distances(
 
 
 def apply_projection_alm(
-    x,
-    projection_info,
-    hard_conds,
-    first_projection,
-    init_traj4proj,
-    proj_params
+    x, projection_info, hard_conds, first_projection, init_traj4proj, proj_params
 ):
     """
     x: tensor of shape (batch_size, horizon, state_dim)
