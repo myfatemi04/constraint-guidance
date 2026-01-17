@@ -689,7 +689,7 @@ def main():
     import json
     import tqdm
 
-    with open("instances_data/instances_dense.json", "r") as f:
+    with open("instances_data/instances_connected_room.json", "r") as f:
         data = json.load(f)
 
     # find problem with 9 robots
@@ -722,12 +722,13 @@ def main():
             .sum(-1)
         )
         energy_lowlevel = lowlevel_vel_sq.sum()
-        # highlevel_vel_penalty = (
-        #     highlevel_vel_sq[highlevel_vel_sq > (0.05**2)] - (0.05**2)
-        # ).sum()
-        # lowlevel_vel_penalty = (
-        #     lowlevel_vel_sq[lowlevel_vel_sq > (0.05**2)] - (0.05**2)
-        # ).sum()
+
+        highlevel_vel_penalty = (
+            highlevel_vel_sq[highlevel_vel_sq > (0.05**2)] - (0.05**2)
+        ).sum()
+        lowlevel_vel_penalty = (
+            lowlevel_vel_sq[lowlevel_vel_sq > (0.05**2)] - (0.05**2)
+        ).sum()
 
         # (t, a, o)
         obstacle_center_dist_sq = (
@@ -741,6 +742,19 @@ def main():
             - obstacle_radii_sq.view(1, 1, -1)
         )
         obstacle_penalties = torch.relu(-obstacle_signed_distances).pow(2).sum()
+
+        # high level obstacle avoidance
+        obstacle_center_dist_sq = (
+            (plan_highlevel.unsqueeze(2) - obs_poses.unsqueeze(0).unsqueeze(0))
+            .pow(2)
+            .sum(-1)
+        )
+        obstacle_signed_distances = (
+            obstacle_center_dist_sq
+            - agent_radii_sq.view(1, -1, 1)
+            - obstacle_radii_sq.view(1, 1, -1)
+        )
+        obstacle_penalties += torch.relu(-obstacle_signed_distances).pow(2).sum()
 
         # (t, a, a)
         agent_center_dist_sq = (
@@ -768,6 +782,8 @@ def main():
             + energy_lowlevel
             + obstacle_penalties * 50
             + agent_penalties * 50
+            + highlevel_vel_penalty * 10
+            + lowlevel_vel_penalty * 10
         )
 
         opt.zero_grad()
