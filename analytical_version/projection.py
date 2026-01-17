@@ -711,112 +711,183 @@ def main():
     ][0]
 
     problem = Problem.from_json(prob)
-    sol = SolutionValue(
-        agent_agent_distances=torch.zeros((65, problem.num_agents, problem.num_agents)),
-        agent_obstacle_distances=torch.zeros(
-            (65, problem.num_agents, problem.num_obstacles)
-        ),
-        agent_positions=torch.randn((65, problem.num_agents, 2), requires_grad=True),
-    )
-
-    opt = torch.optim.Adam([sol.agent_positions], lr=0.1)
 
     obs_poses = torch.from_numpy(problem.obstacle_positions)
     agent_radii = torch.from_numpy(problem.agent_radii)
     obstacle_radii = torch.from_numpy(problem.obstacle_radii)
 
-    obstacle_penalty_weight = 50
-    agent_penalty_weight = 50
-    lowlevel_vel_penalty_weight = 10
-    transition_by = 2000
-    energy_lowlevel_weight = 0  # to 3
-    energy_highlevel_weight = 3.0  # to 0
-    rate = 1.005
+    results = {True: [], False: []}
+    for use_penalties in [False, True]:
+        print(f"use_penalties: {use_penalties}")
+        for i in range(10):
+            obstacle_penalty_weight = 50
+            agent_penalty_weight = 50
+            lowlevel_vel_penalty_weight = 10
+            transition_by = 2000
+            energy_lowlevel_weight = 0  # to 3
+            energy_highlevel_weight = 3.0  # to 0
+            rate = 1.005
 
-    for i in tqdm.tqdm(range(8000)):
-        plan_highlevel = sol.agent_positions[::4]
-        highlevel_vel_sq = (
-            (plan_highlevel[1:, :, :] - plan_highlevel[:-1, :, :]).pow(2).sum(-1)
-        )
-        energy_highlevel = highlevel_vel_sq.sum()
-        lowlevel_vel_sq = (
-            (sol.agent_positions[1:, :, :] - sol.agent_positions[:-1, :, :])
-            .pow(2)
-            .sum(-1)
-        )
-        energy_lowlevel = lowlevel_vel_sq.sum()
-
-        highlevel_vel_penalty = (
-            highlevel_vel_sq[highlevel_vel_sq > (0.05**2)] - (0.05**2)
-        ).sum()
-        lowlevel_vel_penalty = torch.relu(lowlevel_vel_sq - (0.05**2)).pow(2).sum()
-
-        # (t, a, o)
-        obstacle_center_dist_sq = (
-            (sol.agent_positions.unsqueeze(2) - obs_poses.unsqueeze(0).unsqueeze(0))
-            .pow(2)
-            .sum(-1)
-        )
-        obstacle_signed_distances = obstacle_center_dist_sq - (
-            agent_radii.view(1, -1, 1) + obstacle_radii.view(1, 1, -1)
-        ).pow(2)
-        obstacle_penalties = torch.relu(-obstacle_signed_distances).pow(2).sum()
-
-        # (t, a, a)
-        agent_center_dist_sq = (
-            (sol.agent_positions.unsqueeze(2) - sol.agent_positions.unsqueeze(1))
-            .pow(2)
-            .sum(-1)
-        )
-        agent_signed_distances = agent_center_dist_sq - (
-            agent_radii.view(1, -1, 1) + agent_radii.view(1, 1, -1)
-        ).pow(2)
-        agent_signed_distances = (
-            agent_signed_distances
-            # to ignore self-interactions in the relu
-            + torch.eye(problem.num_agents).view(
-                1, problem.num_agents, problem.num_agents
-            )
-            * 1e6
-        )
-        agent_penalties = torch.relu(-agent_signed_distances).pow(2).sum()
-
-        loss = (
-            energy_highlevel * energy_highlevel_weight
-            + energy_lowlevel * energy_lowlevel_weight
-            + obstacle_penalties * obstacle_penalty_weight
-            + agent_penalties * agent_penalty_weight
-            # + highlevel_vel_penalty * 10
-            + lowlevel_vel_penalty * lowlevel_vel_penalty_weight
-        )
-
-        if (i + 1) % 10 == 0 and i < 2000:
-            obstacle_penalty_weight *= rate
-            agent_penalty_weight *= rate
-            lowlevel_vel_penalty_weight *= rate
-
-        energy_lowlevel_weight = 10 * min(i, transition_by) / transition_by
-        energy_highlevel_weight = 10 - energy_lowlevel_weight
-
-        opt.zero_grad()
-        loss.backward()
-        opt.step()
-        with torch.no_grad():
-            sol.agent_positions[0, :, :] = torch.from_numpy(
-                problem.agent_start_positions
-            )
-            sol.agent_positions[-1, :, :] = torch.from_numpy(
-                problem.agent_end_positions
+            sol = SolutionValue(
+                agent_agent_distances=torch.zeros(
+                    (65, problem.num_agents, problem.num_agents)
+                ),
+                agent_obstacle_distances=torch.zeros(
+                    (65, problem.num_agents, problem.num_obstacles)
+                ),
+                agent_positions=torch.randn(
+                    (65, problem.num_agents, 2), requires_grad=True
+                ),
             )
 
-    print("agent_penalties:", agent_penalties.item())
-    print("obstacle_penalties:", obstacle_penalties.item())
-    print("energy_lowlevel:", energy_lowlevel.item())
-    plt.clf()
-    problem.visualize(sol, plt.gca())
+            opt = torch.optim.Adam([sol.agent_positions], lr=0.1)
+
+            for i in tqdm.tqdm(range(8000)):
+                plan_highlevel = sol.agent_positions[::4]
+                highlevel_vel_sq = (
+                    (plan_highlevel[1:, :, :] - plan_highlevel[:-1, :, :])
+                    .pow(2)
+                    .sum(-1)
+                )
+                energy_highlevel = highlevel_vel_sq.sum()
+                lowlevel_vel_sq = (
+                    (sol.agent_positions[1:, :, :] - sol.agent_positions[:-1, :, :])
+                    .pow(2)
+                    .sum(-1)
+                )
+                energy_lowlevel = lowlevel_vel_sq.sum()
+
+                highlevel_vel_penalty = (
+                    highlevel_vel_sq[highlevel_vel_sq > (0.05**2)] - (0.05**2)
+                ).sum()
+                lowlevel_vel_penalty = (
+                    torch.relu(lowlevel_vel_sq - (0.05**2)).pow(2).sum()
+                )
+
+                # (t, a, o)
+                obstacle_center_dist_sq = (
+                    (
+                        sol.agent_positions.unsqueeze(2)
+                        - obs_poses.unsqueeze(0).unsqueeze(0)
+                    )
+                    .pow(2)
+                    .sum(-1)
+                )
+                obstacle_signed_distances = obstacle_center_dist_sq - (
+                    agent_radii.view(1, -1, 1) + obstacle_radii.view(1, 1, -1)
+                ).pow(2)
+                obstacle_penalties = torch.relu(-obstacle_signed_distances).pow(2).sum()
+
+                # (t, a, a)
+                agent_center_dist_sq = (
+                    (
+                        sol.agent_positions.unsqueeze(2)
+                        - sol.agent_positions.unsqueeze(1)
+                    )
+                    .pow(2)
+                    .sum(-1)
+                )
+                agent_signed_distances = agent_center_dist_sq - (
+                    agent_radii.view(1, -1, 1) + agent_radii.view(1, 1, -1)
+                ).pow(2)
+                agent_signed_distances = (
+                    agent_signed_distances
+                    # to ignore self-interactions in the relu
+                    + torch.eye(problem.num_agents).view(
+                        1, problem.num_agents, problem.num_agents
+                    )
+                    * 1e6
+                )
+                agent_penalties = torch.relu(-agent_signed_distances).pow(2).sum()
+
+                loss = (
+                    energy_highlevel * energy_highlevel_weight
+                    + energy_lowlevel * energy_lowlevel_weight
+                    + obstacle_penalties * obstacle_penalty_weight
+                    + agent_penalties * agent_penalty_weight
+                    # + highlevel_vel_penalty * 10
+                    + lowlevel_vel_penalty * lowlevel_vel_penalty_weight
+                )
+
+                if (i + 1) % 10 == 0 and i < 2000:
+                    obstacle_penalty_weight *= rate
+                    agent_penalty_weight *= rate
+                    lowlevel_vel_penalty_weight *= rate
+
+                if use_penalties:
+                    energy_lowlevel_weight = 10 * min(i, transition_by) / transition_by
+                    energy_highlevel_weight = 10 - energy_lowlevel_weight
+                else:
+                    energy_lowlevel_weight = 10
+                    energy_highlevel_weight = 0
+
+                opt.zero_grad()
+                loss.backward()
+                opt.step()
+                with torch.no_grad():
+                    sol.agent_positions[0, :, :] = torch.from_numpy(
+                        problem.agent_start_positions
+                    )
+                    sol.agent_positions[-1, :, :] = torch.from_numpy(
+                        problem.agent_end_positions
+                    )
+
+            results[use_penalties].append(
+                {
+                    "agent_penalties": agent_penalties.item(),
+                    "obstacle_penalties": obstacle_penalties.item(),
+                    "energy_lowlevel": energy_lowlevel.item(),
+                }
+            )
+
+            print(results[use_penalties][-1])
+
+    # plot histogram for each
+    plt.figure(figsize=(12, 6))
+    plt.subplot(1, 3, 1)
+    plt.title("Agent Penalties")
+    plt.hist(
+        [r["agent_penalties"] for r in results[False]],
+        alpha=0.5,
+        label="Without Penalties",
+    )
+    plt.hist(
+        [r["agent_penalties"] for r in results[True]],
+        alpha=0.5,
+        label="With Penalties",
+    )
+    plt.legend()
+    plt.subplot(1, 3, 2)
+    plt.title("Obstacle Penalties")
+    plt.hist(
+        [r["obstacle_penalties"] for r in results[False]],
+        alpha=0.5,
+        label="Without Penalties",
+    )
+    plt.hist(
+        [r["obstacle_penalties"] for r in results[True]],
+        alpha=0.5,
+        label="With Penalties",
+    )
+    plt.legend()
+    plt.subplot(1, 3, 3)
+    plt.title("Lowlevel Energy")
+    plt.hist(
+        [r["energy_lowlevel"] for r in results[False]],
+        alpha=0.5,
+        label="Without Penalties",
+    )
+    plt.hist(
+        [r["energy_lowlevel"] for r in results[True]],
+        alpha=0.5,
+        label="With Penalties",
+    )
+    plt.legend()
+    plt.tight_layout()
     plt.show()
 
     # animate the solution
+    return
     for i in range(problem.num_timesteps):
         plt.clf()
         problem.visualize(
