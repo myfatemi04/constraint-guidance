@@ -717,23 +717,26 @@ def main():
             (sp_err * 100).backward()
             er_err = constr.agent_end_positions[k].implied_slack.pow(2)
             (er_err * 100).backward()
-        for k in constr.speed:
-            if constr.speed[k].implied_slack < 0:
-                constr.speed[k].implied_slack.pow(2).backward(retain_graph=True)
-                constr.speed[k].implied_slack.backward()
-                speed_slack += constr.speed[k].implied_slack.pow(2).item()
-        problem.evaluate_distance_objective(test_sol).backward()
+        # for k in constr.speed:
+        #     if constr.speed[k].implied_slack < 0:
+        #         constr.speed[k].implied_slack.pow(2).backward(retain_graph=True)
+        #         constr.speed[k].implied_slack.backward()
+        #         speed_slack += constr.speed[k].implied_slack.pow(2).item()
+        dist_obj = problem.evaluate_distance_objective(test_sol)
+        dist_obj.backward()
 
         with torch.no_grad():
-            test_sol.agent_positions -= 0.1 * torch.clamp(
-                test_sol.agent_positions.grad, min=-1, max=1
+            test_sol.agent_positions -= (
+                0.3
+                * (0.01 / 0.3) ** (i / 100)
+                * torch.clamp(test_sol.agent_positions.grad, min=-1, max=1)
             )
             test_sol.agent_positions += 0.01 * torch.randn_like(
                 test_sol.agent_positions
             )
             test_sol.agent_positions.grad.zero_()
 
-        print(speed_slack)
+        print(speed_slack, dist_obj.item())
     sol = test_sol
 
     # Evaluate objective.
