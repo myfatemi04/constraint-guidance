@@ -694,23 +694,41 @@ def main():
 
     problem = Problem.from_json(data[0])
     sol = SolutionValue(
-        agent_agent_distances=torch.zeros((64, problem.num_agents, problem.num_agents)),
+        agent_agent_distances=torch.zeros((65, problem.num_agents, problem.num_agents)),
         agent_obstacle_distances=torch.zeros(
-            (64, problem.num_agents, problem.num_obstacles)
+            (65, problem.num_agents, problem.num_obstacles)
         ),
-        agent_positions=torch.randn((8, problem.num_agents, 2), requires_grad=True),
+        agent_positions=torch.randn((65, problem.num_agents, 2), requires_grad=True),
     )
 
     opt = torch.optim.Adam([sol.agent_positions], lr=0.1)
 
-    for i in tqdm.tqdm(range(500)):
-        energy = (
+    for i in tqdm.tqdm(range(1000)):
+        plan_highlevel = sol.agent_positions[::8]
+        highlevel_vel_sq = (
+            (plan_highlevel[1:, :, :] - plan_highlevel[:-1, :, :]).pow(2).sum(-1)
+        )
+        energy_highlevel = highlevel_vel_sq.sum()
+        lowlevel_vel_sq = (
             (sol.agent_positions[1:, :, :] - sol.agent_positions[:-1, :, :])
             .pow(2)
-            .sum()
+            .sum(-1)
         )
+        energy_lowlevel = lowlevel_vel_sq.sum()
+        # highlevel_vel_penalty = (
+        #     highlevel_vel_sq[highlevel_vel_sq > (0.05**2)] - (0.05**2)
+        # ).sum()
+        # lowlevel_vel_penalty = (
+        #     lowlevel_vel_sq[lowlevel_vel_sq > (0.05**2)] - (0.05**2)
+        # ).sum()
+        loss = (
+            energy_highlevel + energy_lowlevel
+            # + highlevel_vel_penalty * 1000
+            # + lowlevel_vel_penalty * 1000
+        )
+
         opt.zero_grad()
-        energy.backward()
+        loss.backward()
         opt.step()
         with torch.no_grad():
             sol.agent_positions[0, :, :] = torch.from_numpy(
@@ -720,10 +738,27 @@ def main():
                 problem.agent_end_positions
             )
 
-        if (i + 1) % 500 == 0:
-            plt.clf()
-            problem.visualize(sol, plt.gca())
-            plt.pause(0.01)
+        # coarse_sol = (
+        #     SolutionValue(
+        #         agent_agent_distances=sol.agent_agent_distances.detach().cpu().numpy(),
+        #         agent_obstacle_distances=sol.agent_obstacle_distances.detach()
+        #         .cpu()
+        #         .numpy(),
+        #         agent_positions=np.concatenate(
+        #             [
+        #                 sol.agent_positions.detach().cpu().numpy()[::8],
+        #                 sol.agent_positions.detach().cpu().numpy()[-1:],
+        #             ],
+        #             axis=0,
+        #         ),
+        #     ),
+        # )
+
+        # if (i + 1) % 500 == 0:
+        #     plt.clf()
+        #     problem.visualize(sol, plt.gca())
+        #     # plt.show()
+        #     plt.pause(0.1)
 
     plt.clf()
     problem.visualize(sol, plt.gca())
