@@ -52,6 +52,16 @@ def _maybe_value(v):
         return -100.0
 
 
+def dictionary_to_list(d: dict, shape) -> list:
+    array = np.zeros(shape).tolist()
+    for idxs, v in d.items():
+        entry = array
+        for idx in idxs[:-1]:
+            entry = entry[idx]  # type: ignore
+        entry[idxs[-1]] = v  # type: ignore
+    return array  # type: ignore
+
+
 @dataclass
 class SolutionValue[ArrayType]:
     agent_agent_distances: ArrayType
@@ -69,50 +79,40 @@ class SolutionValue[ArrayType]:
     @classmethod
     def get_value_from_model(cls, model) -> "SolutionValue[np.ndarray]":
         agent_positions = np.array(
-            [
-                [
-                    [
-                        value(model.AgentPositions[time_index, agent_index, dim])
-                        for dim in range(2)
-                    ]
-                    for agent_index in model.Agent
-                ]
-                for time_index in model.Time
-            ]
+            dictionary_to_list(
+                {k: value(model.AgentPositions[k]) for k in model.AgentPositions},
+                shape=(
+                    len(model.Time),
+                    len(model.Agent),
+                    len(model.Dim),
+                ),
+            )
         )
         agent_agent_distances = np.array(
-            [
-                [
-                    [
-                        _maybe_value(
-                            model.AgentAgentDistances[
-                                time_index, min(a1, a2), max(a1, a2)
-                            ]
-                        )
-                        if a1 != a2
-                        else 0
-                        for a2 in model.Agent
-                    ]
-                    for a1 in model.Agent
-                ]
-                for time_index in model.Time
-            ]
+            dictionary_to_list(
+                {
+                    k: _maybe_value(model.AgentAgentDistances[k])
+                    for k in model.AgentAgentDistances
+                },
+                shape=(
+                    len(model.Time),
+                    len(model.Agent),
+                    len(model.Agent),
+                ),
+            )
         )
         agent_obstacle_distances = np.array(
-            [
-                [
-                    [
-                        _maybe_value(
-                            model.AgentObstacleDistances[
-                                time_index, agent_index, obs_index
-                            ]
-                        )
-                        for obs_index in model.Obstacle
-                    ]
-                    for agent_index in model.Agent
-                ]
-                for time_index in model.Time
-            ]
+            dictionary_to_list(
+                {
+                    k: _maybe_value(model.AgentObstacleDistances[k])
+                    for k in model.AgentObstacleDistances
+                },
+                shape=(
+                    len(model.Time),
+                    len(model.Agent),
+                    len(model.Obstacle),
+                ),
+            )
         )
         return SolutionValue(
             agent_positions=agent_positions,
@@ -143,40 +143,68 @@ class ALMResult:
 
 
 @dataclass
-class SingleDynamicConstraintEvaluationResult:
+class InequalityConstraintResult:
     title: str
     value: float
     minimum_value: float
 
     @property
-    def implied_slack(self) -> float:
+    def implied_slack(self):
         """Must be nonpositive to be feasible."""
         return self.value - self.minimum_value
 
 
 @dataclass
-class FullDynamicConstraintEvaluationResult:
-    agent_agent_penetration: dict[
-        tuple[int, int, int], SingleDynamicConstraintEvaluationResult
-    ]
+class EqualityConstraintResult:
+    title: str
+    value: float
+    equality_value: float
+
+    @property
+    def implied_slack(self):
+        """Must be zero to be feasible."""
+        return self.value - self.equality_value
+
+
+@dataclass
+class ConstraintEvaluationResult:
+    agent_agent_penetration: dict[tuple[int, int, int], InequalityConstraintResult]
     """ time_step, (source_agent_index, target_agent_index) """
-    agent_obstacle_penetration: dict[
-        tuple[int, int, int], SingleDynamicConstraintEvaluationResult
-    ]
+    agent_obstacle_penetration: dict[tuple[int, int, int], InequalityConstraintResult]
 
     """ time_step, agent_index, obstacle_index """
-    speed: dict[tuple[int, int], SingleDynamicConstraintEvaluationResult]
+    speed: dict[tuple[int, int], InequalityConstraintResult]
     """ time_step, agent_index """
 
-    def get_speed_constraint(self, model: ConcreteModel) -> Constraint:
+    agent_start_positions: dict[tuple[int, int], EqualityConstraintResult]
+    agent_end_positions: dict[tuple[int, int], EqualityConstraintResult]
+
+    def get_pyomo_speed_constraint(self, model: ConcreteModel) -> Constraint:
         return Constraint(
             model.Time,
             model.Agent,
             rule=lambda _model, time_index, agent_index: (
                 self.speed[time_index, agent_index].value
                 >= self.speed[time_index, agent_index].minimum_value
-                if (time_index < model.Time.last())
+                if (time_index < model.Time.last())  # type: ignore
                 else Constraint.Skip
+            ),
+        )
+
+    def get_pyomo_start_end_position_constraints(
+        self, model: ConcreteModel
+    ) -> tuple[Constraint, Constraint]:
+        return Constraint(
+            model.Agent,
+            model.Dim,
+            rule=lambda _model, agent_index, dim: (
+                self.agent_start_positions[agent_index, dim].implied_slack == 0
+            ),
+        ), Constraint(
+            model.Agent,
+            model.Dim,
+            rule=lambda _model, agent_index, dim: (
+                self.agent_end_positions[agent_index, dim].implied_slack == 0
             ),
         )
 
@@ -227,6 +255,14 @@ class Problem:
     obstacle_positions: np.ndarray
     obstacle_radii: np.ndarray
 
+    def convert_torch(self):
+        self.agent_start_positions = torch.from_numpy(self.agent_start_positions)  # type: ignore
+        self.agent_end_positions = torch.from_numpy(self.agent_end_positions)  # type: ignore
+        self.agent_radii = torch.from_numpy(self.agent_radii)  # type: ignore
+        self.agent_max_speeds = torch.from_numpy(self.agent_max_speeds)  # type: ignore
+        self.obstacle_positions = torch.from_numpy(self.obstacle_positions)  # type: ignore
+        self.obstacle_radii = torch.from_numpy(self.obstacle_radii)  # type: ignore
+
     @property
     def num_agents(self):
         return self.agent_start_positions.shape[0]
@@ -237,13 +273,13 @@ class Problem:
 
     def evaluate_agent_agent_nonpenetration_constraint(
         self, sol: SolutionValue
-    ) -> dict[tuple[int, int, int], SingleDynamicConstraintEvaluationResult]:
+    ) -> dict[tuple[int, int, int], InequalityConstraintResult]:
         return {
             (
                 time_index,
                 source_agent_index,
                 target_agent_index,
-            ): SingleDynamicConstraintEvaluationResult(
+            ): InequalityConstraintResult(
                 title=f"agent_agent_nonpenetration:{time_index}:{source_agent_index}:{target_agent_index}",
                 value=circle_signed_distance(
                     circle_1_x=sol.agent_positions[time_index, source_agent_index, 0],
@@ -263,11 +299,11 @@ class Problem:
 
     def evaluate_speed_constraint(
         self, sol: SolutionValue
-    ) -> dict[tuple[int, int], SingleDynamicConstraintEvaluationResult]:
+    ) -> dict[tuple[int, int], InequalityConstraintResult]:
         return {
-            (time_index, agent_index): SingleDynamicConstraintEvaluationResult(
+            (time_index, agent_index): InequalityConstraintResult(
                 title=f"speed_constraint:{time_index}:{agent_index}",
-                value=sum(
+                value=-sum(
                     [
                         (
                             sol.agent_positions[time_index + 1, agent_index, k]
@@ -277,7 +313,7 @@ class Problem:
                         for k in [0, 1]
                     ]
                 ),
-                minimum_value=self.agent_max_speeds[agent_index] ** 2,
+                minimum_value=-(self.agent_max_speeds[agent_index] ** 2),
             )
             for agent_index in range(self.num_agents)
             for time_index in range(self.num_timesteps - 1)
@@ -285,13 +321,13 @@ class Problem:
 
     def evaluate_agent_obstacle_nonpenetration_constraint(
         self, sol: SolutionValue
-    ) -> dict[tuple[int, int, int], SingleDynamicConstraintEvaluationResult]:
+    ) -> dict[tuple[int, int, int], InequalityConstraintResult]:
         return {
             (
                 time_index,
                 agent_index,
                 obs_index,
-            ): SingleDynamicConstraintEvaluationResult(
+            ): InequalityConstraintResult(
                 title=f"agent_obstacle_nonpenetration:{time_index}:{agent_index}:{obs_index}",
                 value=circle_signed_distance(
                     circle_1_x=sol.agent_positions[time_index, agent_index, 0],
@@ -309,7 +345,7 @@ class Problem:
         }
 
     def get_constraints(self, sol: SolutionValue):
-        return FullDynamicConstraintEvaluationResult(
+        return ConstraintEvaluationResult(
             agent_agent_penetration=self.evaluate_agent_agent_nonpenetration_constraint(
                 sol
             ),
@@ -317,6 +353,24 @@ class Problem:
                 sol
             ),
             speed=self.evaluate_speed_constraint(sol),
+            agent_start_positions={
+                (i, d): EqualityConstraintResult(
+                    title=f"agent_start_pos:{i}:{d}",
+                    value=sol.agent_positions[0, i, d],
+                    equality_value=self.agent_start_positions[i, d],
+                )
+                for i in range(self.num_agents)
+                for d in range(2)
+            },
+            agent_end_positions={
+                (i, d): EqualityConstraintResult(
+                    title=f"agent_end_pos:{i}:{d}",
+                    value=sol.agent_positions[self.num_timesteps - 1, i, d],
+                    equality_value=self.agent_end_positions[i, d],
+                )
+                for i in range(self.num_agents)
+                for d in range(2)
+            },
         )
 
     def evaluate_distance_objective(self, sol: SolutionValue):
@@ -346,11 +400,15 @@ class Problem:
                 )
             )
 
+        agent_pos = sol.agent_positions
+        if isinstance(agent_pos, torch.Tensor):
+            agent_pos = agent_pos.detach().cpu().numpy()
+
         # Plot the agents' trajectories
         for agent_index in range(self.num_agents):
             ax.plot(
-                sol.agent_positions[:, agent_index, 0],
-                sol.agent_positions[:, agent_index, 1],
+                agent_pos[:, agent_index, 0],
+                agent_pos[:, agent_index, 1],
                 marker="o",
                 label=f"Agent {agent_index}",
             )
@@ -422,24 +480,12 @@ def solve_alm_subproblem(
         model.AgentCollisionIndices,
         within=NonNegativeReals,
     )
-    # Start and end position constraints
-    model.StartPositionConstraint = Constraint(
-        model.Agent,
-        model.Dim,
-        rule=lambda model, agent_index, dim: model.AgentPositions[0, agent_index, dim]
-        == problem.agent_start_positions[agent_index, dim],
-    )
-    model.EndPositionConstraint = Constraint(
-        model.Agent,
-        model.Dim,
-        rule=lambda model, agent_index, dim: model.AgentPositions[
-            problem.num_timesteps - 1, agent_index, dim
-        ]
-        == problem.agent_end_positions[agent_index, dim],
-    )
     symbolic_solution_value = SolutionValue.get_symbolic_from_model(model)
     symbolic_constraints = problem.get_constraints(symbolic_solution_value)
-    model.SpeedConstraint = symbolic_constraints.get_speed_constraint(model)
+    model.StartPositionConstraint, model.EndPositionConstraint = (
+        symbolic_constraints.get_pyomo_start_end_position_constraints(model)
+    )
+    model.SpeedConstraint = symbolic_constraints.get_pyomo_speed_constraint(model)
     model.objective = Objective(
         rule=lambda _model: (
             problem.evaluate_distance_objective(symbolic_solution_value)
@@ -500,8 +546,6 @@ def solve_alm(
             rho,
         )
 
-        print(result.termination_condition)
-
         # TODO: Check if solver failed.
         agent_agent_nonpenetration_residuals = (
             problem.evaluate_agent_agent_nonpenetration_constraint(result.sol)
@@ -518,34 +562,26 @@ def solve_alm(
             for v in agent_obstacle_nonpenetration_residuals.values()
         )
         agent_agent_nonpenetration_residuals_array = np.array(
-            [
-                [
-                    [
-                        agent_agent_nonpenetration_residuals[
-                            time_index, min(a1, a2), max(a1, a2)
-                        ].implied_slack
-                        if a1 != a2
-                        else 0
-                        for a2 in range(problem.num_agents)
-                    ]
-                    for a1 in range(problem.num_agents)
-                ]
-                for time_index in range(problem.num_timesteps)
-            ]
+            dictionary_to_list(
+                {
+                    k: agent_agent_nonpenetration_residuals[k].implied_slack
+                    for k in agent_agent_nonpenetration_residuals.keys()
+                },
+                shape=(problem.num_timesteps, problem.num_agents, problem.num_agents),
+            )
         )
         agent_obstacle_nonpenetration_residuals_array = np.array(
-            [
-                [
-                    [
-                        agent_obstacle_nonpenetration_residuals[
-                            time_index, agent_index, obs_index
-                        ].implied_slack
-                        for obs_index in range(problem.num_obstacles)
-                    ]
-                    for agent_index in range(problem.num_agents)
-                ]
-                for time_index in range(problem.num_timesteps)
-            ]
+            dictionary_to_list(
+                {
+                    k: agent_obstacle_nonpenetration_residuals[k].implied_slack
+                    for k in agent_obstacle_nonpenetration_residuals.keys()
+                },
+                shape=(
+                    problem.num_timesteps,
+                    problem.num_agents,
+                    problem.num_obstacles,
+                ),
+            )
         )
         agent_obstacle_residual_norm = np.linalg.norm(
             agent_obstacle_nonpenetration_residuals_array
@@ -652,31 +688,76 @@ def _convert():
 def main():
     import json
 
-    with open("instances_data/instances_empty.json", "r") as f:
+    with open("instances_data/instances_dense.json", "r") as f:
         data = json.load(f)
 
     problem = Problem.from_json(data[0])
-    alm_result = solve_alm(
-        problem, rho=5, rho_factor=1.05, num_alm_iterations=50, tolerance=1e-3
-    )
-    sol = alm_result.step_results[-1].sol
-    sol2 = SolutionValue(
-        agent_agent_distances=np.zeros((64, problem.num_agents, problem.num_agents)),
-        agent_obstacle_distances=np.zeros(
+    # alm_result = solve_alm(
+    #     problem, rho=5, rho_factor=1.5, num_alm_iterations=50, tolerance=1e-3
+    # )
+    # sol = alm_result.step_results[-1].sol
+
+    test_sol = SolutionValue(
+        agent_agent_distances=torch.zeros((64, problem.num_agents, problem.num_agents)),
+        agent_obstacle_distances=torch.zeros(
             (64, problem.num_agents, problem.num_obstacles)
         ),
-        agent_positions=np.linspace(
-            problem.agent_start_positions,
-            problem.agent_end_positions,
-            num=64,
-        ),
+        agent_positions=torch.randn((64, problem.num_agents, 2), requires_grad=True),
     )
+
+    import tqdm
+
+    for i in tqdm.tqdm(range(100)):
+        constr = problem.get_constraints(test_sol)
+
+        speed_slack = 0
+
+        for k in constr.agent_start_positions:
+            sp_err = constr.agent_start_positions[k].implied_slack.pow(2)
+            (sp_err * 100).backward()
+            er_err = constr.agent_end_positions[k].implied_slack.pow(2)
+            (er_err * 100).backward()
+        for k in constr.speed:
+            if constr.speed[k].implied_slack < 0:
+                constr.speed[k].implied_slack.pow(2).backward(retain_graph=True)
+                constr.speed[k].implied_slack.backward()
+                speed_slack += constr.speed[k].implied_slack.pow(2).item()
+        problem.evaluate_distance_objective(test_sol).backward()
+
+        with torch.no_grad():
+            test_sol.agent_positions -= 0.1 * torch.clamp(
+                test_sol.agent_positions.grad, min=-1, max=1
+            )
+            test_sol.agent_positions += 0.01 * torch.randn_like(
+                test_sol.agent_positions
+            )
+            test_sol.agent_positions.grad.zero_()
+
+        print(speed_slack)
+    sol = test_sol
+
+    # Evaluate objective.
+    # print(
+    #     problem.evaluate_distance_objective(test_sol),
+    #     constr.agent_start_positions,
+    # )
+
+    # sol2 = SolutionValue(
+    #     agent_agent_distances=np.zeros((64, problem.num_agents, problem.num_agents)),
+    #     agent_obstacle_distances=np.zeros(
+    #         (64, problem.num_agents, problem.num_obstacles)
+    #     ),
+    #     agent_positions=np.linspace(
+    #         problem.agent_start_positions,
+    #         problem.agent_end_positions,
+    #         num=64,
+    #     ),
+    # )
 
     # sol = sol2
 
     problem.visualize(sol, plt.gca())
     print(problem.evaluate_distance_objective(sol))
-
     plt.show()
 
 
