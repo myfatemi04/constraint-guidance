@@ -788,7 +788,7 @@ def main():
     for use_coarse_to_fine in [True, False]:
         print(f"use_coarse_to_fine: {use_coarse_to_fine}")
         for i in range(10):
-            batch_size = 10
+            batch_size = 1
             # Penalty terms
             rho_agent_obstacle = 1
             rho_agent_agent = 1
@@ -918,8 +918,8 @@ def main():
                 ).sum((1, 2, 3))
                 # (b, t, a)
                 lowlevel_vel_penalties = (
-                    lowlevel_vel_constraint.pow(2) * rho_lowlevel_vel / 2
-                    + lowlevel_vel_constraint * nu_agent_vel
+                    lowlevel_vel_constraint.pow(2) * rho_lowlevel_vel
+                    # + lowlevel_vel_constraint * nu_agent_vel
                 )
 
                 if (i + 1) % update_alm_every == 0 and i > update_alm_after:
@@ -931,11 +931,14 @@ def main():
                         nu_agent_obstacle
                         + rho_agent_obstacle * agent_obstacle_constraint
                     ).detach()
+                    # nu_agent_vel = (
+                    #     nu_agent_vel + rho_lowlevel_vel * lowlevel_vel_constraint
+                    # ).detach()
 
                     if i < update_alm_penalty_terms_until:
                         rho_agent_obstacle *= rate
                         rho_agent_agent *= rate
-                        # rho_lowlevel_vel *= rate
+                        rho_lowlevel_vel *= rate
 
                 if use_coarse_to_fine:
                     energy_lowlevel_weight = 10 * min(i, transition_by) / transition_by
@@ -954,19 +957,6 @@ def main():
                 opt.zero_grad()
                 loss.backward()
                 opt.step()
-
-                # velocity_objective = ()
-                # opt.zero_grad()
-                # velocity_objective.backward()
-
-                # with torch.no_grad():
-                #     # (t, a, o) -> (t, a)
-                #     satisfied_mask = (agent_obstacle_constraint == 0).all(dim=2) & (
-                #         agent_agent_constraint == 0
-                #     ).all(dim=2)
-                #     sol.agent_positions[satisfied_mask] -= (
-                #         0.01 * sol.agent_positions.grad[satisfied_mask]  # type: ignore
-                #     )
 
                 with torch.no_grad():
                     sol.agent_positions[:, 0, :, :] = torch.from_numpy(
@@ -987,24 +977,30 @@ def main():
 
             plt.subplot(2, 3, 1)
             plt.plot(curves["agent_agent_penalties"], label="agent_agent_penalties")
+            plt.title("AA")
             plt.yscale("log")
 
             plt.subplot(2, 3, 2)
             plt.plot(
                 curves["agent_obstacle_penalties"], label="agent_obstacle_penalties"
             )
+            plt.title("AO")
             plt.yscale("log")
 
             plt.subplot(2, 3, 3)
             plt.plot(curves["lowlevel_vel_penalties"], label="lowlevel_vel_penalties")
+            plt.title("V")
             plt.yscale("log")
 
             plt.subplot(2, 3, 4)
             plt.plot(curves["energy_lowlevel"], label="energy_lowlevel")
+            plt.title("E")
             plt.yscale("log")
 
             ax = plt.subplot(2, 3, 5)
             problem.visualize(sol.get_batch_item(0), ax)
+
+            plt.tight_layout()
             plt.pause(0.1)
 
             # Apply ALM.
