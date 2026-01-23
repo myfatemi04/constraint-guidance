@@ -27,8 +27,6 @@ from pyomo.environ import (
 )
 from pyomo.opt import SolverStatus, TerminationCondition
 
-from analytical_version.projection import apply_projection_alm
-
 ArrayType = TypeVar("ArrayType", np.ndarray, torch.Tensor, Var)
 
 
@@ -795,7 +793,7 @@ def main():
             transition_by = 1000
             update_alm_every = 10
             update_alm_after = 2000
-            update_alm_penalty_term_iterations = 300
+            update_alm_penalty_term_iterations = 100
             update_alm_penalty_terms_until = (
                 update_alm_after + update_alm_penalty_term_iterations * update_alm_every
             )
@@ -803,7 +801,7 @@ def main():
             total_steps = update_alm_penalty_terms_until + final_optimization_steps
             energy_lowlevel_weight = 0  # to 3
             energy_highlevel_weight = 3.0  # to 0
-            rate = 1.01
+            rate = 1.01**update_alm_every
             lr = 0.1
 
             curves = {
@@ -860,7 +858,7 @@ def main():
                 obstacle_signed_distances = obstacle_center_dist_sq - (
                     agent_radii.view(1, -1, 1) + obstacle_radii.view(1, 1, -1)
                 ).pow(2)
-                agent_obstacle_constraint = torch.relu(-obstacle_signed_distances)
+                agent_obstacle_constraint = torch.relu(-obstacle_signed_distances) * 10
 
                 # (t, a, a)
                 agent_center_dist_sq = (
@@ -942,23 +940,23 @@ def main():
                 curves["energy_lowlevel"].append(energy_lowlevel.item())
 
             plt.clf()
-            plt.subplot(1, 3, 1)
+            plt.subplot(2, 2, 1)
             plt.plot(curves["agent_agent_penalties"], label="agent_agent_penalties")
             plt.plot(
                 curves["agent_obstacle_penalties"], label="agent_obstacle_penalties"
             )
             plt.yscale("log")
             plt.legend()
-            plt.subplot(1, 3, 2)
+            plt.subplot(2, 2, 2)
             plt.plot(curves["energy_lowlevel"], label="energy_lowlevel")
             plt.yscale("log")
             plt.legend()
-            ax = plt.subplot(1, 3, 3)
+            ax = plt.subplot(2, 2, 3)
             problem.visualize(sol, ax)
             plt.pause(0.1)
 
             # Apply ALM.
-            alm = "old_code"
+            alm = "none"  # "new"
             alm_problem = Problem(
                 num_timesteps=problem.num_timesteps,
                 agent_start_positions=problem.agent_start_positions,
@@ -969,12 +967,6 @@ def main():
                 obstacle_positions=problem.obstacle_positions,
                 obstacle_radii=problem.obstacle_radii,
             )
-
-            if alm == "old_code":
-                result, flag = apply_projection_alm(alm_problem)
-
-                sol.agent_positions = result
-
             if alm == "new":
                 alm_result = solve_alm(
                     alm_problem,
