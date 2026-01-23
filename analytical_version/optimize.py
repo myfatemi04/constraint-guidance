@@ -778,7 +778,7 @@ def main():
     obstacle_radii = torch.from_numpy(problem.obstacle_radii)
 
     results = {True: [], False: []}
-    for use_coarse_to_fine in [False, True]:
+    for use_coarse_to_fine in [True, False]:
         print(f"use_coarse_to_fine: {use_coarse_to_fine}")
         for i in range(10):
             # Penalty terms
@@ -790,14 +790,14 @@ def main():
                 (65, problem.num_agents, problem.num_obstacles)
             )
             lowlevel_vel_penalty_weight = 10
-            transition_by = 1000
+            transition_by = 2000
             update_alm_every = 10
             update_alm_after = 2000
             update_alm_penalty_term_iterations = 100
             update_alm_penalty_terms_until = (
                 update_alm_after + update_alm_penalty_term_iterations * update_alm_every
             )
-            final_optimization_steps = 1000
+            final_optimization_steps = 4000
             total_steps = update_alm_penalty_terms_until + final_optimization_steps
             energy_lowlevel_weight = 0  # to 3
             energy_highlevel_weight = 3.0  # to 0
