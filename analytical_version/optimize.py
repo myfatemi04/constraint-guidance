@@ -792,14 +792,17 @@ def main():
             # Penalty terms
             rho_agent_obstacle = 1
             rho_agent_agent = 1
+            rho_lowlevel_vel = 1
             # Lagrange multipliers
+            horizon = 65
             nu_agent_agent = torch.zeros(
-                (batch_size, 65, problem.num_agents, problem.num_agents)
+                (batch_size, horizon, problem.num_agents, problem.num_agents)
             )
             nu_agent_obstacle = torch.zeros(
-                (batch_size, 65, problem.num_agents, problem.num_obstacles)
+                (batch_size, horizon, problem.num_agents, problem.num_obstacles)
             )
-            lowlevel_vel_penalty_weight = 10
+            nu_agent_vel = torch.zeros((batch_size, horizon - 1, problem.num_agents))
+            rho_lowlevel_vel = 10
             transition_by = 200
             update_alm_every = 10
             update_alm_after = 600
@@ -817,18 +820,19 @@ def main():
             curves = {
                 "agent_agent_penalties": [],
                 "agent_obstacle_penalties": [],
+                "lowlevel_vel_penalties": [],
                 "energy_lowlevel": [],
             }
 
             sol = SolutionValue(
                 agent_agent_distances=torch.zeros(
-                    (batch_size, 65, problem.num_agents, problem.num_agents)
+                    (batch_size, horizon, problem.num_agents, problem.num_agents)
                 ),
                 agent_obstacle_distances=torch.zeros(
-                    (batch_size, 65, problem.num_agents, problem.num_obstacles)
+                    (batch_size, horizon, problem.num_agents, problem.num_obstacles)
                 ),
                 agent_positions=torch.randn(
-                    (batch_size, 65, problem.num_agents, 2), requires_grad=True
+                    (batch_size, horizon, problem.num_agents, 2), requires_grad=True
                 ),
             )
 
@@ -857,9 +861,7 @@ def main():
                 highlevel_vel_penalty = (  # noqa: F841
                     highlevel_vel_sq[highlevel_vel_sq > (0.05**2)] - (0.05**2)
                 ).sum()
-                lowlevel_vel_penalty = (
-                    torch.relu(lowlevel_vel_sq - (0.05**2)).pow(2).sum()
-                )
+                lowlevel_vel_constraint = torch.relu(lowlevel_vel_sq - (0.05**2))
 
                 # (t, a, o)
                 obstacle_center_dist_sq = (
@@ -915,6 +917,11 @@ def main():
                     agent_agent_constraint.pow(2) * rho_agent_agent / 2
                     + agent_agent_constraint * nu_agent_agent
                 ).sum((1, 2, 3))
+                # (b, t, a)
+                lowlevel_vel_penalties = (
+                    lowlevel_vel_constraint.pow(2) * rho_lowlevel_vel / 2
+                    + lowlevel_vel_constraint * nu_agent_vel
+                )
 
                 if (i + 1) % update_alm_every == 0 and i > update_alm_after:
                     # Update Lagrange multipliers.
@@ -929,7 +936,7 @@ def main():
                     if i < update_alm_penalty_terms_until:
                         rho_agent_obstacle *= rate
                         rho_agent_agent *= rate
-                        lowlevel_vel_penalty_weight *= rate
+                        rho_lowlevel_vel *= rate
 
                 if use_coarse_to_fine:
                     energy_lowlevel_weight = 10 * min(i, transition_by) / transition_by
@@ -943,7 +950,7 @@ def main():
                     + energy_lowlevel.sum() * energy_lowlevel_weight
                     + obstacle_penalties.sum()
                     + agent_penalties.sum()
-                    + lowlevel_vel_penalty * lowlevel_vel_penalty_weight
+                    + lowlevel_vel_penalties.sum()
                 )
                 opt.zero_grad()
                 loss.backward(retain_graph=True)
@@ -972,21 +979,32 @@ def main():
 
                 curves["agent_agent_penalties"].append(agent_penalties.tolist())
                 curves["agent_obstacle_penalties"].append(obstacle_penalties.tolist())
+                curves["lowlevel_vel_penalties"].append(
+                    lowlevel_vel_penalties.sum((-1, -2)).tolist()
+                )
                 curves["energy_lowlevel"].append(energy_lowlevel.tolist())
 
             plt.clf()
-            plt.subplot(2, 2, 1)
+
+            plt.subplot(2, 3, 1)
             plt.plot(curves["agent_agent_penalties"], label="agent_agent_penalties")
+            plt.yscale("log")
+
+            plt.subplot(2, 3, 2)
             plt.plot(
                 curves["agent_obstacle_penalties"], label="agent_obstacle_penalties"
             )
             plt.yscale("log")
-            plt.legend()
-            plt.subplot(2, 2, 2)
+
+            plt.subplot(2, 3, 3)
+            plt.plot(curves["lowlevel_vel_penalties"], label="lowlevel_vel_penalties")
+            plt.yscale("log")
+
+            plt.subplot(2, 3, 4)
             plt.plot(curves["energy_lowlevel"], label="energy_lowlevel")
             plt.yscale("log")
-            plt.legend()
-            ax = plt.subplot(2, 2, 3)
+
+            ax = plt.subplot(2, 3, 5)
             problem.visualize(sol.get_batch_item(0), ax)
             plt.pause(0.1)
 
@@ -1040,6 +1058,7 @@ def main():
                     "agent_penalties": agent_penalties.tolist(),  # type: ignore
                     "obstacle_penalties": obstacle_penalties.tolist(),  # type: ignore
                     "energy_lowlevel": energy_lowlevel.tolist(),  # type: ignore
+                    "lowlevel_vel_penalties": lowlevel_vel_penalties.sum().tolist(),
                 }
             )
 
