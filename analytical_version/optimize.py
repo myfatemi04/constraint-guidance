@@ -74,9 +74,9 @@ class SolutionValue[ArrayType]:
 
     def get_batch_item(self, index: int):
         return SolutionValue(
-            agent_positions=self.agent_positions[index],
-            agent_agent_distances=self.agent_agent_distances[index],
-            agent_obstacle_distances=self.agent_obstacle_distances[index],
+            agent_positions=self.agent_positions[index],  # type: ignore
+            agent_agent_distances=self.agent_agent_distances[index],  # type: ignore
+            agent_obstacle_distances=self.agent_obstacle_distances[index],  # type: ignore
         )
 
     @classmethod
@@ -788,7 +788,7 @@ def main():
     for use_coarse_to_fine in [True, False]:
         print(f"use_coarse_to_fine: {use_coarse_to_fine}")
         for i in range(10):
-            batch_size = 10
+            batch_size = 1
             # Penalty terms
             rho_agent_obstacle = 1
             rho_agent_agent = 1
