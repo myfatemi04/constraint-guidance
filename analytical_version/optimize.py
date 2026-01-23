@@ -802,18 +802,18 @@ def main():
                 (batch_size, horizon, problem.num_agents, problem.num_obstacles)
             )
             nu_agent_vel = torch.zeros((batch_size, horizon - 1, problem.num_agents))
-            transition_by = 200
+            transition_by = 1000
             update_alm_every = 10
-            update_alm_after = 600
+            update_alm_after = 1000
             update_alm_penalty_term_iterations = 100
             update_alm_penalty_terms_until = (
                 update_alm_after + update_alm_penalty_term_iterations * update_alm_every
             )
-            final_optimization_steps = 400
+            final_optimization_steps = 1000
             total_steps = update_alm_penalty_terms_until + final_optimization_steps
             energy_lowlevel_weight = 0  # to 3
             energy_highlevel_weight = 3.0  # to 0
-            rate = 1.01**update_alm_every
+            rate = 200 ** (1 / update_alm_penalty_term_iterations)
             lr = 0.1
 
             curves = {
@@ -952,7 +952,7 @@ def main():
                     + energy_lowlevel.sum() * energy_lowlevel_weight
                     + obstacle_penalties.sum()
                     + agent_penalties.sum()
-                    + lowlevel_vel_penalties.sum()
+                    + lowlevel_vel_penalties.sum() * 100
                 )
                 opt.zero_grad()
                 loss.backward()
