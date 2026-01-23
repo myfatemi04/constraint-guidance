@@ -1,3 +1,6 @@
+import json
+import pathlib
+import pickle
 import time
 from dataclasses import dataclass
 from typing import Any, TypeVar
@@ -8,6 +11,7 @@ import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import tqdm
 from loguru import logger
 from pyomo.environ import (
     ConcreteModel,
@@ -250,6 +254,7 @@ class Problem:
     num_timesteps: int
     agent_start_positions: np.ndarray
     agent_end_positions: np.ndarray
+    agent_reference_trajectory: np.ndarray | None
     agent_radii: np.ndarray
     agent_max_speeds: np.ndarray
     obstacle_positions: np.ndarray
@@ -373,7 +378,7 @@ class Problem:
             },
         )
 
-    def evaluate_distance_objective(self, sol: SolutionValue):
+    def evaluate_path_length_objective(self, sol: SolutionValue):
         return sum(
             (
                 sol.agent_positions[time_index + 1, agent_index, k]
@@ -381,6 +386,20 @@ class Problem:
             )
             ** 2
             for time_index in range(self.num_timesteps - 1)
+            for agent_index in range(self.num_agents)
+            for k in [0, 1]
+        )
+
+    def evaluate_path_projection_objective(self, sol: SolutionValue):
+        if self.agent_reference_trajectory is None:
+            return 0.0
+        return sum(
+            (
+                sol.agent_positions[time_index, agent_index, k]
+                - self.agent_reference_trajectory[time_index, agent_index, k]
+            )
+            ** 2
+            for time_index in range(self.num_timesteps)
             for agent_index in range(self.num_agents)
             for k in [0, 1]
         )
@@ -453,6 +472,7 @@ class Problem:
             agent_end_positions=np.array(entry["agents"]["end_positions"]),
             agent_radii=np.array(entry["agents"]["radii"]),
             agent_max_speeds=np.array(entry["agents"]["max_speeds"]),
+            agent_reference_trajectory=None,
             obstacle_positions=np.array(entry["obstacles"]["positions"]),
             obstacle_radii=np.array(entry["obstacles"]["radii"]),
         )
@@ -479,17 +499,61 @@ def solve_alm_subproblem(
     model.Obstacle = RangeSet(0, problem.num_obstacles - 1)
     model.Dim = RangeSet(0, 1)
     model.AgentCollisionIndices = Set(initialize=agent_collision_indices)
-    model.AgentPositions = Var(model.Time, model.Agent, model.Dim, bounds=(-1, 1))
-    model.AgentObstacleDistances = Var(
-        model.Time,
-        model.Agent,
-        model.Obstacle,
-        within=NonNegativeReals,
-    )
-    model.AgentAgentDistances = Var(
-        model.AgentCollisionIndices,
-        within=NonNegativeReals,
-    )
+
+    ref = problem.agent_reference_trajectory
+    if ref is None:
+        model.AgentPositions = Var(model.Time, model.Agent, model.Dim, bounds=(-1, 1))
+        model.AgentObstacleDistances = Var(
+            model.Time,
+            model.Agent,
+            model.Obstacle,
+            within=NonNegativeReals,
+        )
+        model.AgentAgentDistances = Var(
+            model.AgentCollisionIndices,
+            within=NonNegativeReals,
+        )
+    else:
+        model.AgentPositions = Var(
+            model.Time,
+            model.Agent,
+            model.Dim,
+            bounds=(-1, 1),
+            initialize=lambda _model, t, a, d: ref[t, a, d],
+        )
+        model.AgentObstacleDistances = Var(
+            model.Time,
+            model.Agent,
+            model.Obstacle,
+            within=NonNegativeReals,
+            initialize=lambda _model, t, a, o: max(
+                0,
+                circle_signed_distance(
+                    ref[t, a, 0],
+                    ref[t, a, 1],
+                    problem.agent_radii[a],
+                    problem.obstacle_positions[o, 0],
+                    problem.obstacle_positions[o, 1],
+                    problem.obstacle_radii[o],
+                ),
+            ),
+        )
+        model.AgentAgentDistances = Var(
+            model.AgentCollisionIndices,
+            within=NonNegativeReals,
+            initialize=lambda _model, t, a1, a2: max(
+                0,
+                circle_signed_distance(
+                    ref[t, a1, 0],
+                    ref[t, a1, 1],
+                    problem.agent_radii[a1],
+                    ref[t, a2, 0],
+                    ref[t, a2, 1],
+                    problem.agent_radii[a2],
+                ),
+            ),
+        )
+
     symbolic_solution_value = SolutionValue.get_symbolic_from_model(model)
     symbolic_constraints = problem.get_constraints(symbolic_solution_value)
     model.StartPositionConstraint, model.EndPositionConstraint = (
@@ -498,7 +562,11 @@ def solve_alm_subproblem(
     model.SpeedConstraint = symbolic_constraints.get_pyomo_speed_constraint(model)
     model.objective = Objective(
         rule=lambda _model: (
-            problem.evaluate_distance_objective(symbolic_solution_value)
+            (
+                problem.evaluate_path_length_objective(symbolic_solution_value)
+                if ref is None
+                else problem.evaluate_path_projection_objective(symbolic_solution_value)
+            )
             + symbolic_constraints.compute_penetration_alm_objective(
                 nu_agent_agent_nonpenetration,
                 nu_agent_obstacle_nonpenetration,
@@ -677,10 +745,6 @@ def _convert_data_format(data):
 
 
 def _convert():
-    import pickle
-    import pathlib
-    import json
-
     instances = pathlib.Path("instances_data/")
 
     for file in instances.iterdir():
@@ -696,9 +760,6 @@ def _convert():
 
 
 def main():
-    import json
-    import tqdm
-
     with open("instances_data/instances_dense.json", "r") as f:
         data = json.load(f)
 
@@ -720,8 +781,8 @@ def main():
     for use_penalties in [False, True]:
         print(f"use_penalties: {use_penalties}")
         for i in range(10):
-            obstacle_penalty_weight = 50
-            agent_penalty_weight = 50
+            obstacle_penalty_weight = 10
+            agent_penalty_weight = 10
             lowlevel_vel_penalty_weight = 10
             transition_by = 2000
             energy_lowlevel_weight = 0  # to 3
@@ -742,7 +803,7 @@ def main():
 
             opt = torch.optim.Adam([sol.agent_positions], lr=0.1)
 
-            for i in tqdm.tqdm(range(8000)):
+            for i in tqdm.tqdm(range(2000)):
                 plan_highlevel = sol.agent_positions[::4]
                 highlevel_vel_sq = (
                     (plan_highlevel[1:, :, :] - plan_highlevel[:-1, :, :])
@@ -757,7 +818,7 @@ def main():
                 )
                 energy_lowlevel = lowlevel_vel_sq.sum()
 
-                highlevel_vel_penalty = (
+                highlevel_vel_penalty = (  # noqa: F841
                     highlevel_vel_sq[highlevel_vel_sq > (0.05**2)] - (0.05**2)
                 ).sum()
                 lowlevel_vel_penalty = (
@@ -776,7 +837,11 @@ def main():
                 obstacle_signed_distances = obstacle_center_dist_sq - (
                     agent_radii.view(1, -1, 1) + obstacle_radii.view(1, 1, -1)
                 ).pow(2)
-                obstacle_penalties = torch.relu(-obstacle_signed_distances).pow(2).sum()
+                obstacle_penalties = (
+                    torch.relu(-obstacle_signed_distances).pow(2).sum()
+                    * obstacle_penalty_weight
+                    + torch.relu(-obstacle_signed_distances).sum()
+                )
 
                 # (t, a, a)
                 agent_center_dist_sq = (
@@ -798,13 +863,17 @@ def main():
                     )
                     * 1e6
                 )
-                agent_penalties = torch.relu(-agent_signed_distances).pow(2).sum()
+                agent_penalties = (
+                    torch.relu(-agent_signed_distances).pow(2).sum()
+                    * agent_penalty_weight
+                    + torch.relu(-agent_signed_distances).sum()
+                )
 
                 loss = (
                     energy_highlevel * energy_highlevel_weight
                     + energy_lowlevel * energy_lowlevel_weight
-                    + obstacle_penalties * obstacle_penalty_weight
-                    + agent_penalties * agent_penalty_weight
+                    + obstacle_penalties
+                    + agent_penalties
                     # + highlevel_vel_penalty * 10
                     + lowlevel_vel_penalty * lowlevel_vel_penalty_weight
                 )
@@ -832,11 +901,62 @@ def main():
                         problem.agent_end_positions
                     )
 
+            plt.clf()
+            problem.visualize(sol, plt.gca())
+            plt.pause(0.1)
+
+            # Apply ALM.
+            apply_alm = False
+            if apply_alm:
+                alm_problem = Problem(
+                    num_timesteps=problem.num_timesteps,
+                    agent_start_positions=problem.agent_start_positions,
+                    agent_end_positions=problem.agent_end_positions,
+                    agent_reference_trajectory=sol.agent_positions.detach()
+                    .cpu()
+                    .numpy(),
+                    agent_radii=problem.agent_radii,
+                    agent_max_speeds=problem.agent_max_speeds,
+                    obstacle_positions=problem.obstacle_positions,
+                    obstacle_radii=problem.obstacle_radii,
+                )
+                alm_result = solve_alm(
+                    alm_problem,
+                    rho=5.0,
+                    rho_factor=1.05,
+                    num_alm_iterations=10,
+                    tolerance=1e-4,
+                )
+
+                energy_lowlevel = alm_problem.evaluate_path_length_objective(
+                    alm_result.step_results[-1].sol
+                )
+                agent_penalties = sum(
+                    v.value
+                    for v in alm_problem.evaluate_agent_agent_nonpenetration_constraint(
+                        alm_result.step_results[-1].sol
+                    ).values()
+                )
+                obstacle_penalties = sum(
+                    v.value
+                    for v in alm_problem.evaluate_agent_obstacle_nonpenetration_constraint(
+                        alm_result.step_results[-1].sol
+                    ).values()
+                )
+
+                results[use_penalties].append(
+                    {
+                        "agent_penalties": agent_penalties,
+                        "obstacle_penalties": obstacle_penalties,
+                        "energy_lowlevel": energy_lowlevel,
+                    }
+                )
+
             results[use_penalties].append(
                 {
-                    "agent_penalties": agent_penalties.item(),
-                    "obstacle_penalties": obstacle_penalties.item(),
-                    "energy_lowlevel": energy_lowlevel.item(),
+                    "agent_penalties": agent_penalties.item(),  # type: ignore
+                    "obstacle_penalties": obstacle_penalties.item(),  # type: ignore
+                    "energy_lowlevel": energy_lowlevel.item(),  # type: ignore
                 }
             )
 
