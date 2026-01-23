@@ -782,18 +782,33 @@ def main():
         print(f"use_coarse_to_fine: {use_coarse_to_fine}")
         for i in range(10):
             # Penalty terms
-            rho_agent_obstacle = 10
-            rho_agent_agent = 10
+            rho_agent_obstacle = 1
+            rho_agent_agent = 1
             # Lagrange multipliers
             nu_agent_agent = torch.zeros((65, problem.num_agents, problem.num_agents))
             nu_agent_obstacle = torch.zeros(
                 (65, problem.num_agents, problem.num_obstacles)
             )
             lowlevel_vel_penalty_weight = 10
-            transition_by = 2000
+            transition_by = 1000
+            update_alm_every = 10
+            update_alm_after = 2000
+            update_alm_penalty_term_iterations = 300
+            update_alm_penalty_terms_until = (
+                update_alm_after + update_alm_penalty_term_iterations * update_alm_every
+            )
+            final_optimization_steps = 1000
+            total_steps = update_alm_penalty_terms_until + final_optimization_steps
             energy_lowlevel_weight = 0  # to 3
             energy_highlevel_weight = 3.0  # to 0
-            rate = 1.05
+            rate = 1.01
+            lr = 0.1
+
+            curves = {
+                "agent_agent_penalties": [],
+                "agent_obstacle_penalties": [],
+                "energy_lowlevel": [],
+            }
 
             sol = SolutionValue(
                 agent_agent_distances=torch.zeros(
@@ -807,9 +822,9 @@ def main():
                 ),
             )
 
-            opt = torch.optim.Adam([sol.agent_positions], lr=0.1)
+            opt = torch.optim.Adam([sol.agent_positions], lr=lr)
 
-            for i in tqdm.tqdm(range(8000)):
+            for i in tqdm.tqdm(range(total_steps)):
                 plan_highlevel = sol.agent_positions[::4]
                 highlevel_vel_sq = (
                     (plan_highlevel[1:, :, :] - plan_highlevel[:-1, :, :])
@@ -865,7 +880,7 @@ def main():
                     )
                     * 1e6
                 )
-                agent_agent_constraint = torch.relu(-agent_signed_distances)
+                agent_agent_constraint = torch.relu(-agent_signed_distances) * 10
 
                 obstacle_penalties = (
                     agent_obstacle_constraint.pow(2) * rho_agent_obstacle / 2
@@ -885,7 +900,7 @@ def main():
                     + lowlevel_vel_penalty * lowlevel_vel_penalty_weight
                 )
 
-                if (i + 1) % 100 == 0:
+                if (i + 1) % update_alm_every == 0 and i > update_alm_after:
                     # Update Lagrange multipliers.
                     nu_agent_agent = (
                         nu_agent_agent + rho_agent_agent * agent_agent_constraint
@@ -895,7 +910,7 @@ def main():
                         + rho_agent_obstacle * agent_obstacle_constraint
                     ).detach()
 
-                    if i < transition_by:
+                    if i < update_alm_penalty_terms_until:
                         rho_agent_obstacle *= rate
                         rho_agent_agent *= rate
                         lowlevel_vel_penalty_weight *= rate
@@ -909,6 +924,8 @@ def main():
 
                 opt.zero_grad()
                 loss.backward()
+                # Clip gradients.
+                # torch.nn.utils.clip_grad_norm_([sol.agent_positions], 100.0)
                 opt.step()
                 with torch.no_grad():
                     sol.agent_positions[0, :, :] = torch.from_numpy(
@@ -918,12 +935,28 @@ def main():
                         problem.agent_end_positions
                     )
 
+                curves["agent_agent_penalties"].append(agent_penalties.item())
+                curves["agent_obstacle_penalties"].append(obstacle_penalties.item())
+                curves["energy_lowlevel"].append(energy_lowlevel.item())
+
             plt.clf()
-            problem.visualize(sol, plt.gca())
+            plt.subplot(1, 3, 1)
+            plt.plot(curves["agent_agent_penalties"], label="agent_agent_penalties")
+            plt.plot(
+                curves["agent_obstacle_penalties"], label="agent_obstacle_penalties"
+            )
+            plt.yscale("log")
+            plt.legend()
+            plt.subplot(1, 3, 2)
+            plt.plot(curves["energy_lowlevel"], label="energy_lowlevel")
+            plt.yscale("log")
+            plt.legend()
+            ax = plt.subplot(1, 3, 3)
+            problem.visualize(sol, ax)
             plt.pause(0.1)
 
             # Apply ALM.
-            apply_alm = False
+            apply_alm = True
             if apply_alm:
                 alm_problem = Problem(
                     num_timesteps=problem.num_timesteps,
