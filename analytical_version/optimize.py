@@ -27,6 +27,8 @@ from pyomo.environ import (
 )
 from pyomo.opt import SolverStatus, TerminationCondition
 
+from analytical_version.projection import apply_projection_alm
+
 ArrayType = TypeVar("ArrayType", np.ndarray, torch.Tensor, Var)
 
 
@@ -956,20 +958,24 @@ def main():
             plt.pause(0.1)
 
             # Apply ALM.
-            apply_alm = True
-            if apply_alm:
-                alm_problem = Problem(
-                    num_timesteps=problem.num_timesteps,
-                    agent_start_positions=problem.agent_start_positions,
-                    agent_end_positions=problem.agent_end_positions,
-                    agent_reference_trajectory=sol.agent_positions.detach()
-                    .cpu()
-                    .numpy(),
-                    agent_radii=problem.agent_radii,
-                    agent_max_speeds=problem.agent_max_speeds,
-                    obstacle_positions=problem.obstacle_positions,
-                    obstacle_radii=problem.obstacle_radii,
-                )
+            alm = "old_code"
+            alm_problem = Problem(
+                num_timesteps=problem.num_timesteps,
+                agent_start_positions=problem.agent_start_positions,
+                agent_end_positions=problem.agent_end_positions,
+                agent_reference_trajectory=sol.agent_positions.detach().cpu().numpy(),
+                agent_radii=problem.agent_radii,
+                agent_max_speeds=problem.agent_max_speeds,
+                obstacle_positions=problem.obstacle_positions,
+                obstacle_radii=problem.obstacle_radii,
+            )
+
+            if alm == "old_code":
+                result, flag = apply_projection_alm(alm_problem)
+
+                sol.agent_positions = result
+
+            if alm == "new":
                 alm_result = solve_alm(
                     alm_problem,
                     rho=5.0,
