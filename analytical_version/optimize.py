@@ -918,8 +918,8 @@ def main():
                 ).sum((1, 2, 3))
                 # (b, t, a)
                 lowlevel_vel_penalties = (
-                    lowlevel_vel_constraint.pow(2) * rho_lowlevel_vel
-                    # + lowlevel_vel_constraint * nu_agent_vel
+                    lowlevel_vel_constraint.pow(2) * rho_lowlevel_vel / 2
+                    + lowlevel_vel_constraint * nu_agent_vel
                 )
 
                 if (i + 1) % update_alm_every == 0 and i > update_alm_after:
@@ -931,9 +931,9 @@ def main():
                         nu_agent_obstacle
                         + rho_agent_obstacle * agent_obstacle_constraint
                     ).detach()
-                    # nu_agent_vel = (
-                    #     nu_agent_vel + rho_lowlevel_vel * lowlevel_vel_constraint
-                    # ).detach()
+                    nu_agent_vel = (
+                        nu_agent_vel + rho_lowlevel_vel * lowlevel_vel_constraint
+                    ).detach()
 
                     if i < update_alm_penalty_terms_until:
                         rho_agent_obstacle *= rate
