@@ -891,15 +891,6 @@ def main():
                     + agent_agent_constraint * nu_agent_agent
                 ).sum()
 
-                loss = (
-                    energy_highlevel * energy_highlevel_weight
-                    + energy_lowlevel * energy_lowlevel_weight
-                    + obstacle_penalties
-                    + agent_penalties
-                    # + highlevel_vel_penalty * 10
-                    + lowlevel_vel_penalty * lowlevel_vel_penalty_weight
-                )
-
                 if (i + 1) % update_alm_every == 0 and i > update_alm_after:
                     # Update Lagrange multipliers.
                     nu_agent_agent = (
@@ -922,11 +913,31 @@ def main():
                     energy_lowlevel_weight = 10
                     energy_highlevel_weight = 0
 
+                loss = (
+                    obstacle_penalties
+                    + agent_penalties
+                    + lowlevel_vel_penalty * lowlevel_vel_penalty_weight
+                )
                 opt.zero_grad()
-                loss.backward()
-                # Clip gradients.
-                # torch.nn.utils.clip_grad_norm_([sol.agent_positions], 100.0)
+                loss.backward(retain_graph=True)
                 opt.step()
+
+                velocity_objective = (
+                    energy_highlevel * energy_highlevel_weight
+                    + energy_lowlevel * energy_lowlevel_weight
+                )
+                opt.zero_grad()
+                velocity_objective.backward()
+
+                with torch.no_grad():
+                    # (t, a, o) -> (t, a)
+                    satisfied_mask = (agent_obstacle_constraint == 0).all(dim=2) & (
+                        agent_agent_constraint == 0
+                    ).all(dim=2)
+                    sol.agent_positions[satisfied_mask] -= (
+                        0.01 * sol.agent_positions.grad[satisfied_mask]  # type: ignore
+                    )
+
                 with torch.no_grad():
                     sol.agent_positions[0, :, :] = torch.from_numpy(
                         problem.agent_start_positions
