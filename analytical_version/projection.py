@@ -778,16 +778,22 @@ def main():
     obstacle_radii = torch.from_numpy(problem.obstacle_radii)
 
     results = {True: [], False: []}
-    for use_penalties in [False, True]:
-        print(f"use_penalties: {use_penalties}")
+    for use_coarse_to_fine in [False, True]:
+        print(f"use_coarse_to_fine: {use_coarse_to_fine}")
         for i in range(10):
-            obstacle_penalty_weight = 10
-            agent_penalty_weight = 10
+            # Penalty terms
+            rho_agent_obstacle = 10
+            rho_agent_agent = 10
+            # Lagrange multipliers
+            nu_agent_agent = torch.zeros((65, problem.num_agents, problem.num_agents))
+            nu_agent_obstacle = torch.zeros(
+                (65, problem.num_agents, problem.num_obstacles)
+            )
             lowlevel_vel_penalty_weight = 10
             transition_by = 2000
             energy_lowlevel_weight = 0  # to 3
             energy_highlevel_weight = 3.0  # to 0
-            rate = 1.005
+            rate = 1.05
 
             sol = SolutionValue(
                 agent_agent_distances=torch.zeros(
@@ -803,7 +809,7 @@ def main():
 
             opt = torch.optim.Adam([sol.agent_positions], lr=0.1)
 
-            for i in tqdm.tqdm(range(2000)):
+            for i in tqdm.tqdm(range(8000)):
                 plan_highlevel = sol.agent_positions[::4]
                 highlevel_vel_sq = (
                     (plan_highlevel[1:, :, :] - plan_highlevel[:-1, :, :])
@@ -837,11 +843,7 @@ def main():
                 obstacle_signed_distances = obstacle_center_dist_sq - (
                     agent_radii.view(1, -1, 1) + obstacle_radii.view(1, 1, -1)
                 ).pow(2)
-                obstacle_penalties = (
-                    torch.relu(-obstacle_signed_distances).pow(2).sum()
-                    * obstacle_penalty_weight
-                    + torch.relu(-obstacle_signed_distances).sum()
-                )
+                agent_obstacle_constraint = torch.relu(-obstacle_signed_distances)
 
                 # (t, a, a)
                 agent_center_dist_sq = (
@@ -863,11 +865,16 @@ def main():
                     )
                     * 1e6
                 )
+                agent_agent_constraint = torch.relu(-agent_signed_distances)
+
+                obstacle_penalties = (
+                    agent_obstacle_constraint.pow(2) * rho_agent_obstacle / 2
+                    + agent_obstacle_constraint * nu_agent_obstacle
+                ).sum()
                 agent_penalties = (
-                    torch.relu(-agent_signed_distances).pow(2).sum()
-                    * agent_penalty_weight
-                    + torch.relu(-agent_signed_distances).sum()
-                )
+                    agent_agent_constraint.pow(2) * rho_agent_agent / 2
+                    + agent_agent_constraint * nu_agent_agent
+                ).sum()
 
                 loss = (
                     energy_highlevel * energy_highlevel_weight
@@ -878,12 +885,22 @@ def main():
                     + lowlevel_vel_penalty * lowlevel_vel_penalty_weight
                 )
 
-                if (i + 1) % 10 == 0 and i < 2000:
-                    obstacle_penalty_weight *= rate
-                    agent_penalty_weight *= rate
-                    lowlevel_vel_penalty_weight *= rate
+                if (i + 1) % 100 == 0:
+                    # Update Lagrange multipliers.
+                    nu_agent_agent = (
+                        nu_agent_agent + rho_agent_agent * agent_agent_constraint
+                    ).detach()
+                    nu_agent_obstacle = (
+                        nu_agent_obstacle
+                        + rho_agent_obstacle * agent_obstacle_constraint
+                    ).detach()
 
-                if use_penalties:
+                    if i < transition_by:
+                        rho_agent_obstacle *= rate
+                        rho_agent_agent *= rate
+                        lowlevel_vel_penalty_weight *= rate
+
+                if use_coarse_to_fine:
                     energy_lowlevel_weight = 10 * min(i, transition_by) / transition_by
                     energy_highlevel_weight = 10 - energy_lowlevel_weight
                 else:
@@ -944,7 +961,7 @@ def main():
                     ).values()
                 )
 
-                results[use_penalties].append(
+                results[use_coarse_to_fine].append(
                     {
                         "agent_penalties": agent_penalties,
                         "obstacle_penalties": obstacle_penalties,
@@ -952,7 +969,7 @@ def main():
                     }
                 )
 
-            results[use_penalties].append(
+            results[use_coarse_to_fine].append(
                 {
                     "agent_penalties": agent_penalties.item(),  # type: ignore
                     "obstacle_penalties": obstacle_penalties.item(),  # type: ignore
@@ -960,7 +977,7 @@ def main():
                 }
             )
 
-            print(results[use_penalties][-1])
+            print(results[use_coarse_to_fine][-1])
 
     # plot histogram for each
     plt.figure(figsize=(12, 6))
@@ -969,25 +986,25 @@ def main():
     plt.hist(
         [r["agent_penalties"] for r in results[False]],
         alpha=0.5,
-        label="Without Penalties",
+        label="Without Coarse-to-Fine",
     )
     plt.hist(
         [r["agent_penalties"] for r in results[True]],
         alpha=0.5,
-        label="With Penalties",
+        label="With Coarse-to-Fine",
     )
     plt.legend()
     plt.subplot(1, 3, 2)
-    plt.title("Obstacle Penalties")
+    plt.title("Obstacle Coarse-to-Fine")
     plt.hist(
         [r["obstacle_penalties"] for r in results[False]],
         alpha=0.5,
-        label="Without Penalties",
+        label="Without Coarse-to-Fine",
     )
     plt.hist(
         [r["obstacle_penalties"] for r in results[True]],
         alpha=0.5,
-        label="With Penalties",
+        label="With Coarse-to-Fine",
     )
     plt.legend()
     plt.subplot(1, 3, 3)
@@ -995,12 +1012,12 @@ def main():
     plt.hist(
         [r["energy_lowlevel"] for r in results[False]],
         alpha=0.5,
-        label="Without Penalties",
+        label="Without Coarse-to-Fine",
     )
     plt.hist(
         [r["energy_lowlevel"] for r in results[True]],
         alpha=0.5,
-        label="With Penalties",
+        label="With Coarse-to-Fine",
     )
     plt.legend()
     plt.tight_layout()
