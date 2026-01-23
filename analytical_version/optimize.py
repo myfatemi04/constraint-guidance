@@ -792,7 +792,7 @@ def main():
             # Penalty terms
             rho_agent_obstacle = 1
             rho_agent_agent = 1
-            rho_lowlevel_vel = 1
+            rho_lowlevel_vel = 20
             # Lagrange multipliers
             horizon = 65
             nu_agent_agent = torch.zeros(
@@ -801,7 +801,7 @@ def main():
             nu_agent_obstacle = torch.zeros(
                 (batch_size, horizon, problem.num_agents, problem.num_obstacles)
             )
-            nu_agent_vel = torch.zeros((batch_size, horizon - 1, problem.num_agents))
+            nu_lowlevel_vel = torch.zeros((batch_size, horizon - 1, problem.num_agents))
             transition_by = 1000
             update_alm_every = 10
             update_alm_after = 1000
@@ -811,8 +811,8 @@ def main():
             )
             final_optimization_steps = 1000
             total_steps = update_alm_penalty_terms_until + final_optimization_steps
-            energy_lowlevel_weight = 0  # to 3
-            energy_highlevel_weight = 3.0  # to 0
+            energy_lowlevel_weight = 0  # to 10
+            energy_highlevel_weight = 10.0  # to 0
             rate = 200 ** (1 / update_alm_penalty_term_iterations)
             lr = 0.1
 
@@ -919,7 +919,7 @@ def main():
                 # (b, t, a)
                 lowlevel_vel_penalties = (
                     lowlevel_vel_constraint.pow(2) * rho_lowlevel_vel / 2
-                    + lowlevel_vel_constraint * nu_agent_vel
+                    # + lowlevel_vel_constraint * nu_lowlevel_vel
                 )
 
                 if (i + 1) % update_alm_every == 0 and i > update_alm_after:
@@ -931,8 +931,8 @@ def main():
                         nu_agent_obstacle
                         + rho_agent_obstacle * agent_obstacle_constraint
                     ).detach()
-                    nu_agent_vel = (
-                        nu_agent_vel + rho_lowlevel_vel * lowlevel_vel_constraint
+                    nu_lowlevel_vel = (
+                        nu_lowlevel_vel + rho_lowlevel_vel * lowlevel_vel_constraint
                     ).detach()
 
                     if i < update_alm_penalty_terms_until:
@@ -952,7 +952,7 @@ def main():
                     + energy_lowlevel.sum() * energy_lowlevel_weight
                     + obstacle_penalties.sum()
                     + agent_penalties.sum()
-                    + lowlevel_vel_penalties.sum() * 100
+                    + lowlevel_vel_penalties.sum()
                 )
                 opt.zero_grad()
                 loss.backward()
