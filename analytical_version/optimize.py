@@ -914,7 +914,9 @@ def main():
                     energy_highlevel_weight = 0
 
                 loss = (
-                    obstacle_penalties
+                    energy_highlevel * energy_highlevel_weight
+                    + energy_lowlevel * energy_lowlevel_weight
+                    + obstacle_penalties
                     + agent_penalties
                     + lowlevel_vel_penalty * lowlevel_vel_penalty_weight
                 )
@@ -922,21 +924,18 @@ def main():
                 loss.backward(retain_graph=True)
                 opt.step()
 
-                velocity_objective = (
-                    energy_highlevel * energy_highlevel_weight
-                    + energy_lowlevel * energy_lowlevel_weight
-                )
-                opt.zero_grad()
-                velocity_objective.backward()
+                # velocity_objective = ()
+                # opt.zero_grad()
+                # velocity_objective.backward()
 
-                with torch.no_grad():
-                    # (t, a, o) -> (t, a)
-                    satisfied_mask = (agent_obstacle_constraint == 0).all(dim=2) & (
-                        agent_agent_constraint == 0
-                    ).all(dim=2)
-                    sol.agent_positions[satisfied_mask] -= (
-                        0.01 * sol.agent_positions.grad[satisfied_mask]  # type: ignore
-                    )
+                # with torch.no_grad():
+                #     # (t, a, o) -> (t, a)
+                #     satisfied_mask = (agent_obstacle_constraint == 0).all(dim=2) & (
+                #         agent_agent_constraint == 0
+                #     ).all(dim=2)
+                #     sol.agent_positions[satisfied_mask] -= (
+                #         0.01 * sol.agent_positions.grad[satisfied_mask]  # type: ignore
+                #     )
 
                 with torch.no_grad():
                     sol.agent_positions[0, :, :] = torch.from_numpy(
