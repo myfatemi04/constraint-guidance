@@ -788,7 +788,7 @@ def main():
     for use_coarse_to_fine in [True, False]:
         print(f"use_coarse_to_fine: {use_coarse_to_fine}")
         for i in range(10):
-            batch_size = 1
+            batch_size = 10
             # Penalty terms
             rho_agent_obstacle = 1
             rho_agent_agent = 1
@@ -802,7 +802,6 @@ def main():
                 (batch_size, horizon, problem.num_agents, problem.num_obstacles)
             )
             nu_agent_vel = torch.zeros((batch_size, horizon - 1, problem.num_agents))
-            rho_lowlevel_vel = 10
             transition_by = 200
             update_alm_every = 10
             update_alm_after = 600
@@ -936,7 +935,7 @@ def main():
                     if i < update_alm_penalty_terms_until:
                         rho_agent_obstacle *= rate
                         rho_agent_agent *= rate
-                        rho_lowlevel_vel *= rate
+                        # rho_lowlevel_vel *= rate
 
                 if use_coarse_to_fine:
                     energy_lowlevel_weight = 10 * min(i, transition_by) / transition_by
@@ -953,7 +952,7 @@ def main():
                     + lowlevel_vel_penalties.sum()
                 )
                 opt.zero_grad()
-                loss.backward(retain_graph=True)
+                loss.backward()
                 opt.step()
 
                 # velocity_objective = ()
