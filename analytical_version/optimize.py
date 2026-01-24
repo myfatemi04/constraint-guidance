@@ -149,13 +149,7 @@ def main():
 
     for prob in data:
         problem = Problem.from_json(prob)
-
-        obs_poses = torch.from_numpy(problem.obstacle_positions)
-        agent_radii = torch.from_numpy(problem.agent_radii)
-        obstacle_radii = torch.from_numpy(problem.obstacle_radii)
-
-        n_robots = len(prob["agents"]["start_positions"])
-        base_dir = f"results/{n_robots=}_{prob['sample_idx']}"
+        base_dir = f"results/n_robots={problem.num_agents}_{prob['sample_idx']}"
         os.makedirs(base_dir, exist_ok=True)
 
         results = {True: [], False: []}
@@ -242,7 +236,9 @@ def main():
                         # (b, t, a, d) -> (b, t, a, 1, d)
                         sol.agent_positions.unsqueeze(-2)
                         # (o, d) -> (1, 1, 1, o, d)
-                        - obs_poses.unsqueeze(0).unsqueeze(0).unsqueeze(0)
+                        - problem.obstacle_positions.unsqueeze(0)
+                        .unsqueeze(0)
+                        .unsqueeze(0)
                     )
                     .pow(2)
                     .sum(-1)
@@ -250,7 +246,8 @@ def main():
                 obstacle_signed_distances = obstacle_center_dist_sq - (
                     # (a) -> (1, 1, a, 1)
                     # (o) -> (1, 1, 1, o)
-                    agent_radii.view(1, 1, -1, 1) + obstacle_radii.view(1, 1, 1, -1)
+                    problem.agent_radii.view(1, 1, -1, 1)
+                    + problem.obstacle_radii.view(1, 1, 1, -1)
                 ).pow(2)
                 agent_obstacle_constraint = torch.relu(-obstacle_signed_distances)
 
@@ -268,7 +265,8 @@ def main():
                 agent_signed_distances = agent_center_dist_sq - (
                     # (a1) -> (1, 1, a1, 1)
                     # (a2) -> (1, 1, 1, a2)
-                    agent_radii.view(1, 1, -1, 1) + agent_radii.view(1, 1, 1, -1)
+                    problem.agent_radii.view(1, 1, -1, 1)
+                    + problem.agent_radii.view(1, 1, 1, -1)
                 ).pow(2)
                 agent_signed_distances = (
                     agent_signed_distances
