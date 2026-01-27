@@ -9,17 +9,18 @@ import torch
 import tqdm
 
 from ael.problem import Problem, SolutionValue
-from ael.visualize import save_video
+from ael.visualize import save_video, visualize
 
 TensorType = TypeVar("TensorType", torch.Tensor, np.ndarray)
 
 
 def main():
-    with open("instances_data/instances_dense.json", "r") as f:
+    with open("instances_data/instances_connected_room.json", "r") as f:
         data = json.load(f)
 
-    for prob in data:
+    for prob in data[2:3]:
         problem = Problem.from_json(prob)
+
         base_dir = f"results/n_robots={problem.num_agents}_{prob['sample_idx']}"
         os.makedirs(base_dir, exist_ok=True)
 
@@ -241,7 +242,7 @@ def main():
             plt.yscale("log")
 
             ax = plt.subplot(2, 3, 5)
-            problem.visualize(ax, sol.agent_positions[0].detach().cpu().numpy())
+            visualize(problem, ax, sol.agent_positions[0].detach().cpu().numpy())
             plt.tight_layout()
             plt.savefig(f"{base_dir}/optimization_curve_{use_coarse_to_fine}_{i}.png")
 
