@@ -68,10 +68,10 @@ def compute_agent_obstacle_score(
 
         intersection_eps_y = np.sqrt(r**2 - intersection_eps_x**2)
         numerator_integrand = (
-            r
+            -r
             * np.exp(-0.5 * (r**2) / (sigma**2))
-            * (np.pi - intersection_eps_y)
-            / (2 * np.pi * sigma**2)
+            * (np.pi - intersection_eps_y / r)
+            / (np.pi * sigma**2)
         )
         numerator += numerator_integrand * dr
 
@@ -143,7 +143,6 @@ def compute_agent_obstacle_score_batched(
     denominator_first_int_B[d_a_o_B < obs_rad_B] = 0
 
     denominator_B = denominator_first_int_B + denominator_third_int_B
-    numerator_B = np.zeros_like(denominator_B)
 
     intersection_eps_x_T_B = -(obs_rad_B**2 - r_values_T_B**2 - d_a_o_B**2) / (
         2 * d_a_o_B
@@ -152,13 +151,20 @@ def compute_agent_obstacle_score_batched(
     numerator_integrand_T_B = (
         r_values_T_B
         * np.exp(-0.5 * (r_values_T_B**2) / (sigma_B**2))
-        * (np.pi - intersection_eps_y_T_B)
+        * (intersection_eps_y_T_B / r_values_T_B)
     )
-    numerator_B += numerator_integrand_T_B.sum(axis=0) * (
-        dr_B / (2 * np.pi * sigma_B**2)
-    )
+    # Multiply by the prefactor and dr
+    numerator_B = numerator_integrand_T_B.sum(axis=0) * (-dr_B / (np.pi * sigma_B**2))
 
     Theta_T_B = np.arccos(intersection_eps_x_T_B / r_values_T_B)
+    # print(Theta_T_B)
+    # print(intersection_eps_x_T_B**2 + intersection_eps_y_T_B**2 - r_values_T_B**2)
+    # print(
+    #     (intersection_eps_x_T_B - d_a_o_B) ** 2
+    #     + intersection_eps_y_T_B**2
+    #     - obs_rad_B**2
+    # )
+    # print(intersection_eps_x_T_B, intersection_eps_y_T_B)
 
     denominator_B += (
         r_values_T_B
@@ -166,7 +172,7 @@ def compute_agent_obstacle_score_batched(
         * Theta_T_B
     ).sum(axis=0) * (2 * dr_B)
 
-    # Avoid creating R array.
+    # Multiplies by the component vector for epsilon'_x.
     numerator_D_B = (
         np.stack([obs_x_B - agent_x_B, obs_y_B - agent_y_B], axis=0)
         / d_a_o_B
