@@ -403,6 +403,7 @@ def compute_score(
         norm = np.linalg.norm(score_flat, axis=-1, keepdims=True)
         norm_clipped = np.clip(norm, 0, 1.0)
         score_flat = score_flat * (norm_clipped / (1e-8 + norm))
+        score_flat[np.isnan(score_flat)] = 0.0
 
         # unpack scores.
         score_T_A_O_D = score_flat[: T * A * O, :].reshape(
@@ -415,7 +416,6 @@ def compute_score(
             trajectory.shape[0], trajectory.shape[1], trajectory.shape[1], 2
         )
         # Don't compute self-interactions.
-        score_T_A1_A2_D[np.isnan(score_T_A1_A2_D)] = 0.0
         score += (
             score_T_A1_A2_D.sum(axis=2)
             - np.diagonal(score_T_A1_A2_D, axis1=1, axis2=2).transpose(0, 2, 1)

@@ -7,11 +7,6 @@ from typing import cast
 
 import matplotlib.pyplot as plt
 import numpy as np
-from ael.agent_obstacle_score import (
-    compute_agent_obstacle_distance_batched,
-    compute_agent_obstacle_score_batched,
-    compute_r1_r2_batched,
-)
 from matplotlib.axes import Axes
 from matplotlib.backend_bases import MouseButton
 from matplotlib.patches import Circle
@@ -19,6 +14,7 @@ from matplotlib.quiver import Quiver
 from matplotlib.widgets import Slider
 
 from ael.optimize import Problem
+from ael.score_function import compute_agent_obstacle_score_batched
 from ael.visualize import visualize
 
 
@@ -94,10 +90,6 @@ class AgentObstacleDebugger:
         obs_y_B = self.problem.obstacle_positions[:, 1]
         obs_rad_B = self.problem.obstacle_radii + self.agent_radius
 
-        d_a_o_B = compute_agent_obstacle_distance_batched(
-            agent_x_B, agent_y_B, obs_x_B, obs_y_B
-        )
-        r1_B, r2_B = compute_r1_r2_batched(obs_rad_B, d_a_o_B)
         scores_B = compute_agent_obstacle_score_batched(
             agent_x_B,
             agent_y_B,
@@ -105,32 +97,16 @@ class AgentObstacleDebugger:
             obs_y_B,
             obs_rad_B,
             sigma_batch,
-            r1_B,
-            r2_B,
-            d_a_o_B,
             n_integral=20000,
-        )
-
-        # print(
-        #     agent_x_B[0],
-        #     agent_y_B[0],
-        #     obs_x_B[0],
-        #     obs_y_B[0],
-        #     sigma_batch[0],
-        #     r1_B[0],
-        #     r2_B[0],
-        #     d_a_o_B[0],
-        #     scores_B[0],
-        # )
-
-        print(
-            f"{agent_x_B[0]=:.3f}, {agent_y_B[0]=:.3f}, {obs_rad_B[0]=:.3f}, {r1_B[0]=:.3f}, {r2_B[0]=:.3f}, {d_a_o_B[0]=:.3f}, {self.sigma=:.3f}, {scores_B[0]=}"
         )
 
         # Update each quiver with new random vectors scaled by sigma
         for score, (quiver, ox, oy) in zip(scores_B, self.quivers):
             # Update quiver by setting new U, V data
             quiver.set_UVC(score[0], score[1])
+
+        score_magnitudes = np.linalg.norm(scores_B, axis=-1)
+        print("Maximum score magnitude:", score_magnitudes.max())
 
         self.ax.figure.canvas.draw_idle()
 
@@ -144,7 +120,6 @@ class AgentObstacleDebugger:
         ):
             self.x = event.xdata
             self.y = event.ydata
-            print(f"Clicked at ({self.x:.2f}, {self.y:.2f})")
             self.render()
 
     def on_sigma_change(self, val):
@@ -161,8 +136,8 @@ def main():
 
     problem = Problem.from_json(data[0], type="numpy")
 
-    problem.obstacle_positions = np.array([[0.782, 0.793]])
-    problem.obstacle_radii = np.array([0.05])
+    # problem.obstacle_positions = np.array([[0.782, 0.793]])
+    # problem.obstacle_radii = np.array([0.05])
 
     # Create figure with space for slider
     fig, ax = plt.subplots()
@@ -180,7 +155,7 @@ def main():
 
     # Add sigma slider
     ax_slider = plt.axes((0.2, 0.05, 0.6, 0.03))
-    sigma_slider = Slider(ax_slider, "Sigma", 0.1, 5.0, valinit=init_sigma)
+    sigma_slider = Slider(ax_slider, "Sigma", 0.001, 1.0, valinit=init_sigma)
     sigma_slider.on_changed(debugger.on_sigma_change)
 
     # Connect click event
