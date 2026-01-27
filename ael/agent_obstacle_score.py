@@ -1,6 +1,7 @@
 import numpy as np
 
 
+# TODO: Remove in favor of the batched version.
 def compute_agent_obstacle_score(
     agent_x,
     agent_y,
@@ -69,7 +70,7 @@ def compute_agent_obstacle_score(
         numerator_integrand = (
             r
             * np.exp(-0.5 * (r**2) / (sigma**2))
-            * intersection_eps_y
+            * (np.pi - intersection_eps_y)
             / (2 * np.pi * sigma**2)
         )
         numerator += numerator_integrand * dr
@@ -84,55 +85,6 @@ def compute_agent_obstacle_score(
                 * dr
                 * Theta
             )
-
-    numerator = R[:, 0] * numerator
-    score = -1 / (sigma**2) * numerator / denominator
-
-    return score
-
-
-def compute_agent_obstacle_score_vectorized_integral(
-    agent_x, agent_y, obs_x, obs_y, obs_rad, sigma, n_integral=10
-):
-    d_a_o = np.sqrt((agent_x - obs_x) ** 2 + (agent_y - obs_y) ** 2)
-    R = np.array(
-        [
-            [obs_x - agent_x, agent_y - obs_y],
-            [obs_y - agent_y, obs_x - agent_x],
-        ]
-    )
-    R = R / d_a_o
-
-    # Compute numerator.
-    r1 = min(abs(d_a_o - obs_rad), abs(d_a_o + obs_rad))
-    r2 = max(abs(d_a_o - obs_rad), abs(d_a_o + obs_rad))
-    r_values = np.linspace(r1, r2, n_integral, endpoint=False)
-    dr = r_values[1] - r_values[0]
-    r_values = r_values + dr / 2
-
-    denominator_first_int = 1 - np.exp(-0.5 * (r1**2) / (sigma**2))
-    denominator_third_int = -np.exp(-0.5 * (r2**2) / (sigma**2))
-
-    if d_a_o < obs_rad:
-        denominator_first_int = 0
-
-    denominator = denominator_first_int + denominator_third_int
-    numerator = 0.0
-
-    intersection_eps_x = -(obs_rad**2 - r_values**2 - d_a_o**2) / (2 * d_a_o)
-    intersection_eps_y = np.sqrt(r_values**2 - intersection_eps_x**2)
-    numerator_integrand = (
-        r_values * np.exp(-0.5 * (r_values**2) / (sigma**2)) * intersection_eps_y
-    )
-    numerator += numerator_integrand.sum() * (dr / (2 * np.pi * sigma**2))
-
-    Theta = np.arccos(intersection_eps_x / r_values)
-
-    denominator += (
-        r_values
-        * (np.exp(-0.5 * (r_values**2) / (sigma**2)) / (2 * np.pi * sigma**2))
-        * Theta
-    ).sum() * (2 * dr)
 
     numerator = R[:, 0] * numerator
     score = -1 / (sigma**2) * numerator / denominator
@@ -200,7 +152,7 @@ def compute_agent_obstacle_score_batched(
     numerator_integrand_T_B = (
         r_values_T_B
         * np.exp(-0.5 * (r_values_T_B**2) / (sigma_B**2))
-        * intersection_eps_y_T_B
+        * (np.pi - intersection_eps_y_T_B)
     )
     numerator_B += numerator_integrand_T_B.sum(axis=0) * (
         dr_B / (2 * np.pi * sigma_B**2)

@@ -1,5 +1,5 @@
 {
 	"ruff.lint.enable": true,
-	"python.languageServer": "Pylance",
+	"python.languageServer": "None",
 	"python.analysis.typeCheckingMode": "off"
 }
