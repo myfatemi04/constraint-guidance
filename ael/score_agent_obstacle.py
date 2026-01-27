@@ -117,9 +117,6 @@ def compute_agent_obstacle_score_batched(
     obs_y_B: np.ndarray,
     obs_rad_B: np.ndarray,
     sigma_B: np.ndarray,
-    r1_B: np.ndarray,
-    r2_B: np.ndarray,
-    d_a_o_B: np.ndarray,
     n_integral=10,
 ):
     """
@@ -130,6 +127,11 @@ def compute_agent_obstacle_score_batched(
     so that they do not need to be recomputed.
     """
 
+    d_a_o_B = compute_agent_obstacle_distance_batched(
+        agent_x_B, agent_y_B, obs_x_B, obs_y_B
+    )
+    r1_B, r2_B = compute_r1_r2_batched(obs_rad_B, d_a_o_B)
+
     # Batch on last dimension to make broadcasting easier.
     r_values_T_B = (
         np.linspace(0, 1, n_integral, endpoint=False)[:, None] * (r2_B - r1_B)[None, :]
@@ -138,31 +140,67 @@ def compute_agent_obstacle_score_batched(
     dr_B = r_values_T_B[1, :] - r_values_T_B[0, :]
     r_values_T_B = r_values_T_B + dr_B / 2
 
+    intersection_eps_x_T_B = -(obs_rad_B**2 - r_values_T_B**2 - d_a_o_B**2) / (
+        2 * d_a_o_B
+    )
+    Theta_T_B = np.arccos(intersection_eps_x_T_B / r_values_T_B)
+
     denominator_first_int_B = 1 - np.exp(-0.5 * (r1_B**2) / (sigma_B**2))
     denominator_third_int_B = np.exp(-0.5 * (r2_B**2) / (sigma_B**2))
     denominator_first_int_B[d_a_o_B < obs_rad_B] = 0
 
     denominator_B = denominator_first_int_B + denominator_third_int_B
+    denominator_mask = denominator_B < 0.98
 
-    intersection_eps_x_T_B = -(obs_rad_B**2 - r_values_T_B**2 - d_a_o_B**2) / (
-        2 * d_a_o_B
+    # Save compute by only computing denominator where it is needed.
+    denominator_B[denominator_mask] += (
+        r_values_T_B[:, denominator_mask]
+        * (
+            np.exp(
+                -0.5
+                * (r_values_T_B[:, denominator_mask] ** 2)
+                / (sigma_B[denominator_mask] ** 2)
+            )
+            / (2 * np.pi * sigma_B[denominator_mask] ** 2)
+        )
+        * Theta_T_B[:, denominator_mask]
+    ).sum(axis=0) * (2 * dr_B[denominator_mask])
+
+    # Save compute by only computing numerator where it is needed.
+    z1_B = 0.5 * (r1_B / sigma_B) ** 2
+    # z2_B = 0.5 * (r2_B / sigma_B) ** 2
+    numerator_bound_gt_1 = z1_B * np.exp(-z1_B)
+    numerator_bound_lt_1 = 1 / np.e
+    numerator_magnitude_bound_B = numerator_bound_gt_1 * (
+        z1_B > 1
+    ) + numerator_bound_lt_1 * (z1_B <= 1)
+    numerator_magnitude_bound_B = (
+        (r2_B - r1_B) * 2 / np.pi * numerator_magnitude_bound_B
     )
-    intersection_eps_y_T_B = np.sqrt(r_values_T_B**2 - intersection_eps_x_T_B**2)
+    numerator_mask = (numerator_magnitude_bound_B / denominator_B) > 1e-2
+    numerator_B = np.zeros_like(denominator_B)
+
+    intersection_eps_y_T_B = np.sqrt(
+        r_values_T_B[:, numerator_mask] ** 2
+        - intersection_eps_x_T_B[:, numerator_mask] ** 2
+    )
     numerator_integrand_T_B = (
-        -r_values_T_B
-        / (np.pi * sigma_B**2)
-        * np.exp(-0.5 * (r_values_T_B**2) / (sigma_B**2))
+        -r_values_T_B[:, numerator_mask]
+        / (np.pi * sigma_B[numerator_mask] ** 2)
+        * np.exp(
+            -0.5
+            * (r_values_T_B[:, numerator_mask] ** 2)
+            / (sigma_B[numerator_mask] ** 2)
+        )
         * intersection_eps_y_T_B
     )
     # Multiply by the prefactor and dr
-    numerator_B = numerator_integrand_T_B.sum(axis=0) * dr_B
+    numerator_B[numerator_mask] = (
+        numerator_integrand_T_B.sum(axis=0) * dr_B[numerator_mask]
+    )
 
-    Theta_T_B = np.arccos(intersection_eps_x_T_B / r_values_T_B)
-    denominator_B += (
-        r_values_T_B
-        * (np.exp(-0.5 * (r_values_T_B**2) / (sigma_B**2)) / (2 * np.pi * sigma_B**2))
-        * Theta_T_B
-    ).sum(axis=0) * (2 * dr_B)
+    # print("denominator proportion:", denominator_mask.sum() / denominator_B.shape[0])
+    # print("numerator proportion:", numerator_mask.sum() / denominator_B.shape[0])
 
     # Multiplies by the component vector for epsilon'_x.
     numerator_D_B = (

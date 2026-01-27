@@ -2,10 +2,8 @@ import numpy as np
 
 from ael.problem import Problem
 from ael.score_agent_obstacle import (
-    compute_agent_obstacle_distance_batched,
     compute_agent_obstacle_score,
     compute_agent_obstacle_score_batched,
-    compute_r1_r2_batched,
 )
 from ael.score_kinetic_energy import compute_kinetic_energy_score
 
@@ -81,6 +79,7 @@ def step_langevin_batched(
     include_obstacles=True,
     n_integral=50,
     include_noise_term=False,
+    kinetic_magnitude=1,
 ):
     """
     Batches across agents and obstacles.
@@ -163,10 +162,6 @@ def step_langevin_batched(
         sigma_flat = np.concatenate(
             [sigma_T_A_O.reshape(-1), sigma_T_A1_A2.reshape(-1)]
         )
-        d_a_o_flat = compute_agent_obstacle_distance_batched(
-            agent_x_flat, agent_y_flat, obstacle_x_flat, obstacle_y_flat
-        )
-        r1_flat, r2_flat = compute_r1_r2_batched(obstacle_rad_flat, d_a_o_flat)
         score_flat = compute_agent_obstacle_score_batched(
             agent_x_flat,
             agent_y_flat,
@@ -174,9 +169,6 @@ def step_langevin_batched(
             obstacle_y_flat,
             obstacle_rad_flat,
             sigma_flat,
-            r1_flat,
-            r2_flat,
-            d_a_o_flat,
             n_integral=n_integral,
         )
 
@@ -202,7 +194,7 @@ def step_langevin_batched(
             - np.diagonal(score_T_A1_A2_D, axis1=1, axis2=2).transpose(0, 2, 1)
         ) + (score_T_A_O_D.sum(axis=2))
 
-    score = score + 10 * compute_kinetic_energy_score(trajectory, sigma)
+    score = score + kinetic_magnitude * compute_kinetic_energy_score(trajectory, sigma)
 
     return (
         trajectory
