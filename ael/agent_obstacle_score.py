@@ -168,7 +168,7 @@ def compute_agent_obstacle_score_batched(
 
     # Avoid creating R array.
     numerator_D_B = (
-        np.stack([obs_x_B - agent_x_B, agent_y_B - obs_y_B], axis=0)
+        np.stack([obs_x_B - agent_x_B, obs_y_B - agent_y_B], axis=0)
         / d_a_o_B
         * numerator_B[None, :]
     )

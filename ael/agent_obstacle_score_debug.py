@@ -104,6 +104,18 @@ class AgentObstacleDebugger:
             n_integral=20000,
         )
 
+        print(
+            agent_x_B[0],
+            agent_y_B[0],
+            obs_x_B[0],
+            obs_y_B[0],
+            sigma_batch[0],
+            r1_B[0],
+            r2_B[0],
+            d_a_o_B[0],
+            scores_B[0],
+        )
+
         # Update each quiver with new random vectors scaled by sigma
         for score, (quiver, ox, oy) in zip(scores_B, self.quivers):
             # Update quiver by setting new U, V data
@@ -137,6 +149,9 @@ def main():
         data = json.load(f)
 
     problem = Problem.from_json(data[0], type="numpy")
+
+    problem.obstacle_positions = np.array([[0.782, 0.793]])
+    problem.obstacle_radii = np.array([0.05])
 
     # Create figure with space for slider
     fig, ax = plt.subplots()
