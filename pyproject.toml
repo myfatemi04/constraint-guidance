@@ -11,7 +11,13 @@ dependencies = [
     "matplotlib>=3.10.8",
     "numpy>=2.4.1",
     "pyomo>=6.9.5",
+    "ruff>=0.14.14",
     "tensordict>=0.10.0",
     "torch>=2.9.1",
     "tqdm>=4.67.1",
+]
+
+[tool.ruff]
+exclude = [
+    "shapeoptplanning"
 ]

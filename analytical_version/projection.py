@@ -685,7 +685,6 @@ def apply_projection_alm(problem: "Problem"):
     other_agents = None
     nu_dyn = None
 
-    flag = 0
     grad_o = []
     grad_a = []
     import time
@@ -758,7 +757,6 @@ def apply_projection_alm(problem: "Problem"):
             d_dyn=d_dyn,
         )
 
-        init_traj4proj_array = x_iteration
         init_d_o, init_d_a, init_d_dyn = d_o, d_a, d_dyn
 
         fea_o_real, fea_a_real, fea_dyn_real = check_feasibility(

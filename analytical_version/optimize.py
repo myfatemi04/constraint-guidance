@@ -4,14 +4,18 @@ import os
 import pickle
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Generic, Literal, TypeVar, overload
 
 import av
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
+import numpy as np
 import PIL.Image
 import torch
 import tqdm
 from matplotlib.axes import Axes
+
+TensorType = TypeVar("TensorType", torch.Tensor, np.ndarray)
 
 
 @dataclass
@@ -34,16 +38,34 @@ class SolutionValue:
         )
 
 
+@overload
+def _tensor(array, type: Literal["torch"]) -> torch.Tensor: ...
+
+
+@overload
+def _tensor(array, type: Literal["numpy"]) -> np.ndarray: ...
+
+
+def _tensor(array, type: Literal["torch", "numpy"] = "torch"):
+    match type:
+        case "torch":
+            return torch.tensor(array, dtype=torch.float32)
+        case "numpy":
+            return np.array(array, dtype=np.float32)
+        case _:
+            raise ValueError(f"Unknown type: {type}")
+
+
 @dataclass
-class Problem:
+class Problem(Generic[TensorType]):
     num_timesteps: int
-    agent_start_positions: torch.Tensor
-    agent_end_positions: torch.Tensor
-    agent_reference_trajectory: torch.Tensor | None
-    agent_radii: torch.Tensor
-    agent_max_speeds: torch.Tensor
-    obstacle_positions: torch.Tensor
-    obstacle_radii: torch.Tensor
+    agent_start_positions: TensorType
+    agent_end_positions: TensorType
+    agent_reference_trajectory: TensorType | None
+    agent_radii: TensorType
+    agent_max_speeds: TensorType
+    obstacle_positions: TensorType
+    obstacle_radii: TensorType
 
     @property
     def num_agents(self):
@@ -53,7 +75,11 @@ class Problem:
     def num_obstacles(self):
         return self.obstacle_positions.shape[0]
 
-    def visualize(self, agent_positions: torch.Tensor, ax: Axes):
+    @staticmethod
+    def _as_numpy(array):
+        return array.detach().cpu().numpy()
+
+    def visualize(self, ax: Axes, agent_positions: np.ndarray | None = None):
         # Plot the obstacles
         for obs_index in range(self.num_obstacles):
             x, y = self.obstacle_positions[obs_index].tolist()
@@ -64,25 +90,27 @@ class Problem:
             )
 
         # Plot the agents' trajectories
-        for agent_index in range(self.num_agents):
-            if agent_positions.shape[0] == 1:
-                x, y = agent_positions[0, agent_index, 0].tolist()
-                ax.add_patch(
-                    patches.Circle((x, y), self.agent_radii[agent_index].item())
-                )
-            else:
-                ax.plot(
-                    agent_positions[:, agent_index, 0].detach().cpu().numpy(),
-                    agent_positions[:, agent_index, 1].detach().cpu().numpy(),
-                    marker="o",
-                    label=f"Agent {agent_index}",
-                    # set size to agent radius
-                    markersize=self.agent_radii[agent_index].item() * 10,
-                )
+        if agent_positions is not None:
+            for agent_index in range(self.num_agents):
+                if agent_positions.shape[0] == 1:
+                    x, y = agent_positions[0, agent_index, 0].tolist()
+                    ax.add_patch(
+                        patches.Circle((x, y), self.agent_radii[agent_index].item())
+                    )
+                else:
+                    ax.plot(
+                        agent_positions[:, agent_index, 0],
+                        agent_positions[:, agent_index, 1],
+                        marker="o",
+                        label=f"Agent {agent_index}",
+                        # set size to agent radius
+                        markersize=self.agent_radii[agent_index].item() * 10,
+                    )
+
         # Plot the agents' start and goal positions
         for agent_index in range(self.num_agents):
-            (sx, sy) = self.agent_start_positions[agent_index].detach().cpu().numpy()
-            (ex, ey) = self.agent_end_positions[agent_index].detach().cpu().numpy()
+            (sx, sy) = self._as_numpy(self.agent_start_positions[agent_index])
+            (ex, ey) = self._as_numpy(self.agent_end_positions[agent_index])
             ax.plot(
                 sx,
                 sy,
@@ -102,27 +130,41 @@ class Problem:
 
         ax.set_aspect("equal")
 
+    @overload
     @classmethod
-    def from_json(cls, entry):
+    def from_json(cls, entry) -> "Problem[torch.Tensor]": ...
+
+    @overload
+    @classmethod
+    def from_json(cls, entry, type: Literal["torch"]) -> "Problem[torch.Tensor]": ...
+
+    @overload
+    @classmethod
+    def from_json(cls, entry, type: Literal["numpy"]) -> "Problem[np.ndarray]": ...
+
+    @classmethod
+    def from_json(cls, entry, type: Literal["torch", "numpy"] = "torch") -> Any:
         return cls(
             num_timesteps=entry["num_timesteps"],
-            agent_start_positions=torch.tensor(entry["agents"]["start_positions"]),
-            agent_end_positions=torch.tensor(entry["agents"]["end_positions"]),
-            agent_radii=torch.tensor(entry["agents"]["radii"]),
-            agent_max_speeds=torch.tensor(entry["agents"]["max_speeds"]),
+            agent_start_positions=_tensor(
+                entry["agents"]["start_positions"], type=type
+            ),
+            agent_end_positions=_tensor(entry["agents"]["end_positions"], type=type),
+            agent_radii=_tensor(entry["agents"]["radii"], type=type),
+            agent_max_speeds=_tensor(entry["agents"]["max_speeds"], type=type),
             agent_reference_trajectory=None,
-            obstacle_positions=torch.tensor(entry["obstacles"]["positions"]),
-            obstacle_radii=torch.tensor(entry["obstacles"]["radii"]),
+            obstacle_positions=_tensor(entry["obstacles"]["positions"], type=type),
+            obstacle_radii=_tensor(entry["obstacles"]["radii"], type=type),
         )
 
 
-def save_video(problem: Problem, agent_positions: torch.Tensor, path: str | Path):
+def save_video(problem: Problem, agent_positions: np.ndarray, path: str | Path):
     buf = io.BytesIO()
     images = []
 
     for step in range(problem.num_timesteps):
         plt.clf()
-        problem.visualize(agent_positions[0, step : step + 1], plt.gca())
+        problem.visualize(agent_positions[step : step + 1], plt.gca())
         plt.title(f"Timestep {step}")
         plt.savefig(buf, format="png")
         buf.seek(0)
@@ -369,13 +411,13 @@ def main():
             plt.yscale("log")
 
             ax = plt.subplot(2, 3, 5)
-            problem.visualize(sol.agent_positions[0], ax)
+            problem.visualize(sol.agent_positions[0].detach().cpu().numpy(), ax)
             plt.tight_layout()
             plt.savefig(f"{base_dir}/optimization_curve_{use_coarse_to_fine}_{i}.png")
 
             save_video(
                 problem,
-                sol.agent_positions[0],
+                sol.agent_positions[0].detach().cpu().numpy(),
                 f"{base_dir}/trajectory_{use_coarse_to_fine}_{i}.mp4",
             )
 
