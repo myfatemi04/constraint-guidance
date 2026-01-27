@@ -223,15 +223,3 @@ def compute_agent_obstacle_score_batched(
     score_D_B = -1 / (sigma_B**2) * numerator_D_B / denominator_B
 
     return score_D_B.T
-
-
-def debug():
-    import json
-
-    from optimize import Problem
-
-    with open("instances_data/instances_dense.json", "r") as f:
-        data = json.load(f)
-
-    problem = Problem.from_json(data[0])
-    problem.visualize()
