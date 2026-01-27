@@ -43,7 +43,7 @@ def compute_agent_obstacle_score(
     r_values = r_values + dr / 2
 
     denominator_first_int = 1 - np.exp(-0.5 * (r1**2) / (sigma**2))
-    denominator_third_int = -np.exp(-0.5 * (r2**2) / (sigma**2))
+    denominator_third_int = np.exp(-0.5 * (r2**2) / (sigma**2))
 
     if d_a_o < obs_rad:
         denominator_first_int = 0
@@ -85,6 +85,8 @@ def compute_agent_obstacle_score(
                 * dr
                 * Theta
             )
+
+    print(denominator, denominator_first_int, denominator_third_int)
 
     numerator = R[:, 0] * numerator
     score = 1 / (sigma**2) * numerator / denominator
@@ -139,7 +141,7 @@ def compute_agent_obstacle_score_batched(
     r_values_T_B = r_values_T_B + dr_B / 2
 
     denominator_first_int_B = 1 - np.exp(-0.5 * (r1_B**2) / (sigma_B**2))
-    denominator_third_int_B = -np.exp(-0.5 * (r2_B**2) / (sigma_B**2))
+    denominator_third_int_B = np.exp(-0.5 * (r2_B**2) / (sigma_B**2))
     denominator_first_int_B[d_a_o_B < obs_rad_B] = 0
 
     denominator_B = denominator_first_int_B + denominator_third_int_B
@@ -149,32 +151,23 @@ def compute_agent_obstacle_score_batched(
     )
     intersection_eps_y_T_B = np.sqrt(r_values_T_B**2 - intersection_eps_x_T_B**2)
     numerator_integrand_T_B = (
-        r_values_T_B
+        -r_values_T_B
+        / (np.pi * sigma_B**2)
         * np.exp(-0.5 * (r_values_T_B**2) / (sigma_B**2))
         * intersection_eps_y_T_B
     )
     # Multiply by the prefactor and dr
-    numerator_B = numerator_integrand_T_B.sum(axis=0) * (-dr_B / (np.pi * sigma_B**2))
+    numerator_B = numerator_integrand_T_B.sum(axis=0) * dr_B
 
     Theta_T_B = np.arccos(intersection_eps_x_T_B / r_values_T_B)
-    # print(Theta_T_B)
-    # print(intersection_eps_x_T_B**2 + intersection_eps_y_T_B**2 - r_values_T_B**2)
-    # print(
-    #     (intersection_eps_x_T_B - d_a_o_B) ** 2
-    #     + intersection_eps_y_T_B**2
-    #     - obs_rad_B**2
-    # )
-    print(intersection_eps_x_T_B)
-    print(intersection_eps_y_T_B)
-    print(numerator_B)
-
     denominator_B += (
         r_values_T_B
         * (np.exp(-0.5 * (r_values_T_B**2) / (sigma_B**2)) / (2 * np.pi * sigma_B**2))
         * Theta_T_B
     ).sum(axis=0) * (2 * dr_B)
 
-    print(denominator_B)
+    # print(numerator_B[0], denominator_B[0], r1_B[0], r2_B[0])
+    print(denominator_B[0], denominator_first_int_B[0], denominator_third_int_B[0])
 
     # Multiplies by the component vector for epsilon'_x.
     numerator_D_B = (
