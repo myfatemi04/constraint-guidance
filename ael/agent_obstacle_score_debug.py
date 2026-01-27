@@ -23,12 +23,19 @@ from ael.visualize import visualize
 
 
 class AgentObstacleDebugger:
-    def __init__(self, problem: Problem[np.ndarray], ax: Axes):
+    def __init__(
+        self,
+        problem: Problem[np.ndarray],
+        ax: Axes,
+        init_x: float = 0.0,
+        init_y: float = 0.0,
+        init_sigma: float = 1.0,
+    ):
         self.problem = problem
         self.ax = ax
-        self.x: float = 0.0
-        self.y: float = 0.0
-        self.sigma: float = 1.0
+        self.x: float = init_x
+        self.y: float = init_y
+        self.sigma: float = init_sigma
         self.quivers: list[tuple[Quiver, float, float]] = []
         self.position_circle: Circle | None = None
         self.agent_radius: float = problem.agent_radii[0]
@@ -104,16 +111,20 @@ class AgentObstacleDebugger:
             n_integral=20000,
         )
 
+        # print(
+        #     agent_x_B[0],
+        #     agent_y_B[0],
+        #     obs_x_B[0],
+        #     obs_y_B[0],
+        #     sigma_batch[0],
+        #     r1_B[0],
+        #     r2_B[0],
+        #     d_a_o_B[0],
+        #     scores_B[0],
+        # )
+
         print(
-            agent_x_B[0],
-            agent_y_B[0],
-            obs_x_B[0],
-            obs_y_B[0],
-            sigma_batch[0],
-            r1_B[0],
-            r2_B[0],
-            d_a_o_B[0],
-            scores_B[0],
+            f"{agent_x_B[0]=:.3f}, {agent_y_B[0]=:.3f}, {obs_rad_B[0]=:.3f}, {r1_B[0]=:.3f}, {r2_B[0]=:.3f}, {d_a_o_B[0]=:.3f}, {self.sigma=:.3f}, {scores_B[0]=}"
         )
 
         # Update each quiver with new random vectors scaled by sigma
@@ -158,11 +169,18 @@ def main():
     plt.subplots_adjust(bottom=0.15)
 
     # Create debugger instance
-    debugger = AgentObstacleDebugger(problem, ax)
+    init_sigma = 0.47005208333333
+    debugger = AgentObstacleDebugger(
+        problem,
+        ax,
+        init_x=0.5054223744292239,
+        init_y=0.2875570776255709,
+        init_sigma=init_sigma,
+    )
 
     # Add sigma slider
     ax_slider = plt.axes((0.2, 0.05, 0.6, 0.03))
-    sigma_slider = Slider(ax_slider, "Sigma", 0.1, 5.0, valinit=1.0)
+    sigma_slider = Slider(ax_slider, "Sigma", 0.1, 5.0, valinit=init_sigma)
     sigma_slider.on_changed(debugger.on_sigma_change)
 
     # Connect click event

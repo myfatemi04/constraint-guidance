@@ -70,7 +70,7 @@ def compute_agent_obstacle_score(
         numerator_integrand = (
             -r
             * np.exp(-0.5 * (r**2) / (sigma**2))
-            * (np.pi - intersection_eps_y / r)
+            * intersection_eps_y
             / (np.pi * sigma**2)
         )
         numerator += numerator_integrand * dr
@@ -87,7 +87,7 @@ def compute_agent_obstacle_score(
             )
 
     numerator = R[:, 0] * numerator
-    score = -1 / (sigma**2) * numerator / denominator
+    score = 1 / (sigma**2) * numerator / denominator
 
     return score
 
@@ -151,7 +151,7 @@ def compute_agent_obstacle_score_batched(
     numerator_integrand_T_B = (
         r_values_T_B
         * np.exp(-0.5 * (r_values_T_B**2) / (sigma_B**2))
-        * (intersection_eps_y_T_B / r_values_T_B)
+        * intersection_eps_y_T_B
     )
     # Multiply by the prefactor and dr
     numerator_B = numerator_integrand_T_B.sum(axis=0) * (-dr_B / (np.pi * sigma_B**2))
@@ -164,7 +164,9 @@ def compute_agent_obstacle_score_batched(
     #     + intersection_eps_y_T_B**2
     #     - obs_rad_B**2
     # )
-    # print(intersection_eps_x_T_B, intersection_eps_y_T_B)
+    print(intersection_eps_x_T_B)
+    print(intersection_eps_y_T_B)
+    print(numerator_B)
 
     denominator_B += (
         r_values_T_B
@@ -172,12 +174,14 @@ def compute_agent_obstacle_score_batched(
         * Theta_T_B
     ).sum(axis=0) * (2 * dr_B)
 
+    print(denominator_B)
+
     # Multiplies by the component vector for epsilon'_x.
     numerator_D_B = (
         np.stack([obs_x_B - agent_x_B, obs_y_B - agent_y_B], axis=0)
         / d_a_o_B
         * numerator_B[None, :]
     )
-    score_D_B = -1 / (sigma_B**2) * numerator_D_B / denominator_B
+    score_D_B = 1 / (sigma_B**2) * numerator_D_B / denominator_B
 
     return score_D_B.T
