@@ -7,7 +7,8 @@ import json
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backend_bases import MouseButton
-from optimize import Problem
+
+from ael.optimize import Problem
 
 with open("instances_data/instances_dense.json", "r") as f:
     data = json.load(f)

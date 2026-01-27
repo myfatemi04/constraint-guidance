@@ -17,7 +17,7 @@ from pyomo.environ import (
 from pyomo.opt import SolverStatus, TerminationCondition
 
 if TYPE_CHECKING:
-    from analytical_version.optimize import Problem
+    from ael.optimize import Problem
 
 
 def solve_L_aug(

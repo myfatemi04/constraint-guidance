@@ -1,7 +1,8 @@
 import time
 
 import numpy as np
-from agent_obstacle_score import (
+
+from ael.agent_obstacle_score import (
     compute_agent_obstacle_distance_batched,
     compute_agent_obstacle_score,
     compute_agent_obstacle_score_batched,
