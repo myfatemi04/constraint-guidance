@@ -86,8 +86,6 @@ def compute_agent_obstacle_score(
                 * Theta
             )
 
-    print(denominator, denominator_first_int, denominator_third_int)
-
     numerator = R[:, 0] * numerator
     score = 1 / (sigma**2) * numerator / denominator
 
@@ -165,9 +163,6 @@ def compute_agent_obstacle_score_batched(
         * (np.exp(-0.5 * (r_values_T_B**2) / (sigma_B**2)) / (2 * np.pi * sigma_B**2))
         * Theta_T_B
     ).sum(axis=0) * (2 * dr_B)
-
-    # print(numerator_B[0], denominator_B[0], r1_B[0], r2_B[0])
-    print(denominator_B[0], denominator_first_int_B[0], denominator_third_int_B[0])
 
     # Multiplies by the component vector for epsilon'_x.
     numerator_D_B = (

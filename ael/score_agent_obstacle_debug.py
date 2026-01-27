@@ -7,17 +7,17 @@ from typing import cast
 
 import matplotlib.pyplot as plt
 import numpy as np
+from ael.agent_obstacle_score import (
+    compute_agent_obstacle_distance_batched,
+    compute_agent_obstacle_score_batched,
+    compute_r1_r2_batched,
+)
 from matplotlib.axes import Axes
 from matplotlib.backend_bases import MouseButton
 from matplotlib.patches import Circle
 from matplotlib.quiver import Quiver
 from matplotlib.widgets import Slider
 
-from ael.agent_obstacle_score import (
-    compute_agent_obstacle_distance_batched,
-    compute_agent_obstacle_score_batched,
-    compute_r1_r2_batched,
-)
 from ael.optimize import Problem
 from ael.visualize import visualize
 
