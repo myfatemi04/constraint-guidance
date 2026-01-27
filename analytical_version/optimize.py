@@ -76,7 +76,10 @@ class Problem(Generic[TensorType]):
         return self.obstacle_positions.shape[0]
 
     @staticmethod
-    def _as_numpy(array):
+    def _as_numpy(array: torch.Tensor | np.ndarray) -> np.ndarray:
+        if isinstance(array, np.ndarray):
+            return array
+
         return array.detach().cpu().numpy()
 
     def visualize(self, ax: Axes, agent_positions: np.ndarray | None = None):
@@ -93,7 +96,7 @@ class Problem(Generic[TensorType]):
         if agent_positions is not None:
             for agent_index in range(self.num_agents):
                 if agent_positions.shape[0] == 1:
-                    x, y = agent_positions[0, agent_index, 0].tolist()
+                    x, y = agent_positions[0, agent_index].tolist()
                     ax.add_patch(
                         patches.Circle((x, y), self.agent_radii[agent_index].item())
                     )
@@ -164,7 +167,7 @@ def save_video(problem: Problem, agent_positions: np.ndarray, path: str | Path):
 
     for step in range(problem.num_timesteps):
         plt.clf()
-        problem.visualize(agent_positions[step : step + 1], plt.gca())
+        problem.visualize(plt.gca(), agent_positions[step : step + 1])
         plt.title(f"Timestep {step}")
         plt.savefig(buf, format="png")
         buf.seek(0)
@@ -336,21 +339,6 @@ def main():
                     # + lowlevel_vel_constraint * nu_lowlevel_vel
                 )
 
-                if (step + 1) % update_alm_every == 0 and step > update_alm_after:
-                    # Update Lagrange multipliers.
-                    nu_agent_agent += rho_agent_agent * agent_agent_constraint.detach()
-                    nu_agent_obstacle += (
-                        rho_agent_obstacle * agent_obstacle_constraint.detach()
-                    )
-                    nu_lowlevel_vel += (
-                        rho_lowlevel_vel * lowlevel_vel_constraint.detach()
-                    )
-
-                    if step < update_alm_penalty_terms_until:
-                        rho_agent_obstacle *= rate
-                        rho_agent_agent *= rate
-                        rho_lowlevel_vel *= rate
-
                 if use_coarse_to_fine:
                     energy_lowlevel_weight = (
                         10 * min(step, transition_by) / transition_by
@@ -367,17 +355,33 @@ def main():
                     + agent_penalties.sum()
                     + lowlevel_vel_penalties.sum()
                 )
+
                 opt.zero_grad()
                 loss.backward()
                 opt.step()
 
+                if (step + 1) % update_alm_every == 0 and step > update_alm_after:
+                    # Update Lagrange multipliers.
+                    nu_agent_agent += rho_agent_agent * agent_agent_constraint.detach()
+                    nu_agent_obstacle += (
+                        rho_agent_obstacle * agent_obstacle_constraint.detach()
+                    )
+                    nu_lowlevel_vel += (
+                        rho_lowlevel_vel * lowlevel_vel_constraint.detach()
+                    )
+
+                    if step < update_alm_penalty_terms_until:
+                        rho_agent_obstacle *= rate
+                        rho_agent_agent *= rate
+                        rho_lowlevel_vel *= rate
+
                 with torch.no_grad():
-                    sol.agent_positions[:, 0, :, :] = torch.from_numpy(
-                        problem.agent_start_positions
-                    ).unsqueeze(0)
-                    sol.agent_positions[:, -1, :, :] = torch.from_numpy(
-                        problem.agent_end_positions
-                    ).unsqueeze(0)
+                    sol.agent_positions[:, 0, :, :] = (
+                        problem.agent_start_positions.unsqueeze(0)
+                    )
+                    sol.agent_positions[:, -1, :, :] = (
+                        problem.agent_end_positions.unsqueeze(0)
+                    )
 
                 curves["agent_agent_penalties"].append(agent_penalties.tolist())
                 curves["agent_obstacle_penalties"].append(obstacle_penalties.tolist())
@@ -411,7 +415,7 @@ def main():
             plt.yscale("log")
 
             ax = plt.subplot(2, 3, 5)
-            problem.visualize(sol.agent_positions[0].detach().cpu().numpy(), ax)
+            problem.visualize(ax, sol.agent_positions[0].detach().cpu().numpy())
             plt.tight_layout()
             plt.savefig(f"{base_dir}/optimization_curve_{use_coarse_to_fine}_{i}.png")
 
