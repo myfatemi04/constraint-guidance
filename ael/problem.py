@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Generic, Literal, TypeVar, overload
+from typing import Any, Generic, Literal, TypeVar, cast, overload
 
 import numpy as np
 import torch
@@ -85,7 +85,7 @@ class Problem(Generic[TensorType]):
 
     @classmethod
     def from_json(cls, entry, type: Literal["torch", "numpy"] = "torch") -> Any:
-        return cls(
+        return cast(Any, cls)(
             num_timesteps=entry["num_timesteps"],
             agent_start_positions=_tensor(
                 entry["agents"]["start_positions"], type=type
