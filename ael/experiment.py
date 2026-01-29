@@ -53,13 +53,13 @@ def make_schedule(num_steps_per_sigma: int = 60):
             sigma=0.01, step_size=0.5, num_steps=num_steps_per_sigma, kinetic_weight=50
         ),
         ScheduleEntry(
-            sigma=0.001, step_size=0.5, num_steps=num_steps_per_sigma, kinetic_weight=50
+            sigma=0.001, step_size=0.5, num_steps=num_steps_per_sigma, kinetic_weight=10
         ),
         ScheduleEntry(
             sigma=0.0001,
             step_size=0.5,
             num_steps=num_steps_per_sigma,
-            kinetic_weight=50,
+            kinetic_weight=2,
         ),
     ]
 
@@ -112,5 +112,6 @@ if __name__ == "__main__":
                 executor.shutdown(wait=True)
 
             pd.DataFrame(data).to_csv(
-                f"experiment_results_{count}_{num_steps_per_sigma=}.csv", index=False
+                f"experiment_results_{count}_{num_steps_per_sigma=}_decrease_kinetic.csv",
+                index=False,
             )

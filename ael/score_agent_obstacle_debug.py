@@ -14,7 +14,7 @@ from matplotlib.quiver import Quiver
 from matplotlib.widgets import Slider
 
 from ael.optimize import Problem
-from ael.score_function import compute_agent_obstacle_score_batched
+from ael.score_function import compute_agent_obstacle_score_batched_helper
 from ael.visualize import visualize
 
 
@@ -90,7 +90,7 @@ class AgentObstacleDebugger:
         obs_y_B = self.problem.obstacle_positions[:, 1]
         obs_rad_B = self.problem.obstacle_radii + self.agent_radius
 
-        scores_B = compute_agent_obstacle_score_batched(
+        scores_B = compute_agent_obstacle_score_batched_helper(
             agent_x_B,
             agent_y_B,
             obs_x_B,
