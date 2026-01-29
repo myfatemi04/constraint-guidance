@@ -3,7 +3,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 import numpy as np
 import pandas as pd
@@ -18,7 +18,7 @@ class MainArgs:
     problem_set: str = "dense"
     """ Loads problems from `./instances_data/instances_{problem_set}.json`. """
 
-    num_robots: int | None = None
+    num_robots: int | Literal["any"] = "any"
     """ If specified, selects only problems with this many robots. """
 
     optimizer: OptimizerOptions = field(default_factory=OptimizerOptions)
@@ -29,6 +29,9 @@ class MainArgs:
 
     save_dir: str = "./results/{date}/experiment_{time}"
     """ Path to a directory in which to save results. Allows formatting with `date` and `time` variables, which are formatted as YYYY-mm-dd and HH-MM-SS, respectively. """
+
+    label: str | None = "{problem_set}_num_robots={num_robots}"
+    """ Label to attach to this experiment. Gets appended to the save directory if specified. Can use the {problem_set} and {num_robots} variables. If None, no label is used. """
 
 
 def main(args: MainArgs):
@@ -53,6 +56,11 @@ def main(args: MainArgs):
         args.save_dir.format(
             date=time.strftime("%Y-%m-%d"), time=time.strftime("%H-%M-%S")
         )
+        + (
+            f"_{args.label.format(problem_set=args.problem_set, num_robots=args.num_robots)}"
+            if args.label is not None
+            else ""
+        )
     )
     save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -76,7 +84,7 @@ def main(args: MainArgs):
             json.dump(args.optimizer.__dict__, f, indent=4)
 
         for problem in problems:
-            if args.num_robots is not None and problem.num_agents != args.num_robots:
+            if args.num_robots != "any" and problem.num_agents != args.num_robots:
                 continue
 
             futures.append(executor.submit(solve, problem, schedule=schedule))
