@@ -17,14 +17,32 @@ class Result:
     trajectories: list[np.ndarray]
     """ List of trajectories at each optimization step. """
 
+    identifier: str | None
+    """ An identifier for the problem that was solved, if available. """
+
+    agent_obstacle_constraint_residuals: np.ndarray
+    """ Residuals for agent-obstacle nonpenetration constraints. If positive, represents the amount by which the signed distance into the obstacle exceeds zero. Shape (t, num_agents, num_obstacles). """
+
+    agent_agent_constraint_residuals: np.ndarray
+    """ Residuals for agent-agent nonpenetration constraints. If positive, represents the amount by which the signed distance into another agent exceeds zero. Shape (t, num_agents, num_agents). """
+
 
 @dataclass
 class OptimizerOptions:
     optimization: Literal["adam", "sgd"] = "adam"
+    """ The optimization algorithm to use. Adam is strongly recommended for stability."""
+
     beta1: float = 0.9
+    """ Adam optimizer $\\beta_1$ parameter. """
+
     beta2: float = 0.999
+    """ Adam optimizer $\\beta_2$ parameter. """
+
     eps: float = 1e-8
+    """ Adam optimizer $\\epsilon$ parameter. """
+
     magnitude_clip: float = 10000.0
+    """ Represents the maximum L2 norm for score predictions of individual obstacles. """
 
 
 @dataclass
@@ -41,6 +59,9 @@ class ScheduleEntry:
     num_steps: int = 60
     """ The number of steps to operate under these parameters. """
 
+    num_integral: int = 20
+    """ The number of integration points to use when computing the nonpenetration score functions. """
+
 
 DEFAULT_SCHEDULE = [
     ScheduleEntry(sigma=0.01, step_size=0.5, num_steps=60, kinetic_weight=50),
@@ -49,13 +70,57 @@ DEFAULT_SCHEDULE = [
 ]
 
 
+def compute_constraint_residuals(
+    problem: Problem[np.ndarray], trajectories: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return the constraint residuals for agent-obstacle and agent-agent distances, respectively."""
+
+    ### Agent-agent nonpenetration constraints ###
+    agent_pairwise_distances = (
+        # (t, num_agents, 1, 2) - (t, 1, num_agents, 2) -> (t, num_agents, num_agents, 2)
+        trajectories[:, :, np.newaxis, :] - trajectories[:, np.newaxis, :, :]
+    )
+    agent_pairwise_distances = np.linalg.norm(agent_pairwise_distances, axis=-1)
+    min_acceptable_distances = (
+        problem.agent_radii[:, np.newaxis] + problem.agent_radii[np.newaxis, :]
+    )
+    residuals_agent_agent = min_acceptable_distances - agent_pairwise_distances
+    residuals_agent_agent[residuals_agent_agent < 0] = 0.0
+    diag_indices = np.diag_indices(residuals_agent_agent.shape[1])
+    residuals_agent_agent[:, diag_indices[0], diag_indices[1]] = 0.0
+    assert (np.diagonal(residuals_agent_agent, axis1=1, axis2=2) == 0).all()
+
+    ### Agent-obstacle nonpenetration constraints ###
+    agent_obstacle_distances = (
+        # (t, num_agents, 1, 2) - (1, num_obstacles, 2) -> (t, num_agents, num_obstacles, 2)
+        trajectories[:, :, np.newaxis, :] - problem.obstacle_positions[np.newaxis, :, :]
+    )
+    agent_obstacle_distances = np.linalg.norm(agent_obstacle_distances, axis=-1)
+    min_acceptable_agent_obstacle_distances = (
+        # (num_agents, 1) + (1, num_obstacles) -> (num_agents, num_obstacles)
+        problem.agent_radii[:, np.newaxis] + problem.obstacle_radii[np.newaxis, :]
+    )
+    residuals_agent_obstacle = (
+        min_acceptable_agent_obstacle_distances - agent_obstacle_distances
+    )
+    residuals_agent_obstacle[residuals_agent_obstacle < 0] = 0.0
+
+    return residuals_agent_obstacle, residuals_agent_agent
+
+
 def solve(
     problem: Problem,
     optimizer_options: OptimizerOptions = OptimizerOptions(),
     schedule: list[ScheduleEntry] = DEFAULT_SCHEDULE,
+    initial_trajectory: np.ndarray | None = None,
+    identifier: str | None = None,
 ) -> Result:
     # TODO: Initialize from prior distribution based on energy.
-    trajectory = np.random.randn(64, problem.num_agents, 2) * 0.5
+    trajectory = (
+        np.random.randn(64, problem.num_agents, 2) * 0.5
+        if initial_trajectory is None
+        else initial_trajectory.copy()
+    )
     start_positions = problem.agent_start_positions
     end_positions = problem.agent_end_positions
     trajectory[0] = start_positions
@@ -78,7 +143,7 @@ def solve(
                 sigma=schedule_entry.sigma,
                 problem=problem,
                 include_obstacles=True,
-                n_integral=20,
+                n_integral=schedule_entry.num_integral,
                 kinetic_weight=schedule_entry.kinetic_weight,
                 magnitude_clip=optimizer_options.magnitude_clip,
             )
@@ -110,4 +175,14 @@ def solve(
 
     solve_time = time.time() - t0
 
-    return Result(solve_time=solve_time, trajectories=trajectories)
+    agent_obstacle_constraint_residuals, agent_agent_constraint_residuals = (
+        compute_constraint_residuals(problem, trajectory)
+    )
+
+    return Result(
+        solve_time=solve_time,
+        trajectories=trajectories,
+        identifier=identifier,
+        agent_obstacle_constraint_residuals=agent_obstacle_constraint_residuals,
+        agent_agent_constraint_residuals=agent_agent_constraint_residuals,
+    )

@@ -130,6 +130,8 @@ def compute_agent_obstacle_score_batched_helper(
     obs_rad_B: np.ndarray,
     sigma_B: np.ndarray,
     n_integral=10,
+    denominator_threshold=0.00,
+    numerator_threshold=0.00,
 ):
     """
     Here, 'B' indicates the batch dimension, 'D' indicates the spatial dimension, and 'T' indicates
@@ -160,7 +162,7 @@ def compute_agent_obstacle_score_batched_helper(
     denominator_first_int_B[d_a_o_B < obs_rad_B] = 0
 
     denominator_B = denominator_first_int_B + denominator_third_int_B
-    denominator_mask = denominator_B < 0.98
+    denominator_mask = denominator_B < (1 - denominator_threshold)
 
     # Save compute by only computing denominator where it is needed.
     denominator_B[denominator_mask] += (
@@ -187,7 +189,7 @@ def compute_agent_obstacle_score_batched_helper(
     numerator_magnitude_bound_B = (
         (r2_B - r1_B) * 2 / np.pi * numerator_magnitude_bound_B
     )
-    numerator_mask = (numerator_magnitude_bound_B / denominator_B) > 1e-2
+    numerator_mask = (numerator_magnitude_bound_B / denominator_B) > numerator_threshold
     numerator_B = np.zeros_like(denominator_B)
 
     intersection_eps_y_T_B = np.sqrt(
