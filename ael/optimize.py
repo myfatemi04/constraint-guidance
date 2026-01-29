@@ -19,7 +19,7 @@ def main():
         data = json.load(f)
 
     for prob in data[2:3]:
-        problem = Problem.from_json(prob)
+        problem = Problem.from_json(prob, type="torch")
 
         base_dir = f"results/n_robots={problem.num_agents}_{prob['sample_idx']}"
         os.makedirs(base_dir, exist_ok=True)

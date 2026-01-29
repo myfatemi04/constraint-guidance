@@ -95,12 +95,12 @@ def save_video(problem: Problem, agent_positions: np.ndarray, path: str | Path):
 
 
 def save_optimization_process_video(
-    problem: Problem, agent_positions: np.ndarray, path: str | Path
+    problem: Problem, agent_positions: np.ndarray | list[np.ndarray], path: str | Path
 ):
     buf = io.BytesIO()
     images = []
 
-    for step in range(agent_positions.shape[0]):
+    for step in range(len(agent_positions)):
         plt.clf()
         visualize(problem, plt.gca(), agent_positions[step])
         plt.title(f"Timestep {step}")

@@ -84,7 +84,7 @@ class Problem(Generic[TensorType]):
     def from_json(cls, entry, type: Literal["numpy"]) -> "Problem[np.ndarray]": ...
 
     @classmethod
-    def from_json(cls, entry, type: Literal["torch", "numpy"] = "torch") -> Any:
+    def from_json(cls, entry, type: Literal["torch", "numpy"] = "numpy") -> Any:
         return cast(Any, cls)(
             num_timesteps=entry["num_timesteps"],
             agent_start_positions=_tensor(
