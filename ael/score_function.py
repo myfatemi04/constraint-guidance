@@ -211,8 +211,8 @@ def compute_agent_obstacle_score_batched_helper(
         numerator_integrand_T_B.sum(axis=0) * dr_B[numerator_mask]
     )
 
-    print("denominator proportion:", denominator_mask.sum() / denominator_B.shape[0])
-    print("numerator proportion:", numerator_mask.sum() / denominator_B.shape[0])
+    # print("denominator proportion:", denominator_mask.sum() / denominator_B.shape[0])
+    # print("numerator proportion:", numerator_mask.sum() / denominator_B.shape[0])
 
     # Multiplies by the component vector for epsilon'_x.
     numerator_D_B = (
@@ -409,7 +409,7 @@ def compute_score(
     include_obstacles=True,
     kinetic_weight=10.0,
     magnitude_clip=1.0,
-    n_integral=50,
+    n_integral=200,
 ):
     """
     Batches across agents and obstacles.

@@ -39,6 +39,7 @@ def store_result(problem: Problem, result: Result, save_dir: Path):
     """Helper function that stores all tensors. Also stores high-level information like the time taken to solve, maximum constraint violations, and objective function values. Furthermore, visualizes the optimization process and final trajectories."""
 
     import json
+    import subprocess
 
     import matplotlib.pyplot as plt
 
@@ -72,8 +73,14 @@ def store_result(problem: Problem, result: Result, save_dir: Path):
     with open(save_dir / "info.json", "w") as f:
         json.dump(info_dict, f, indent=4)
 
+    logger.info(json.dumps(info_dict, indent=4))
+
     # Visualize final trajectories.
+    plt.figure(figsize=(6, 6))
+    plt.title("Final Trajectory")
     visualize(problem, plt.gca(), result.trajectories[-1])
+    plt.tight_layout()
+    plt.savefig(save_dir / "final_trajectory.png")
     plt.clf()
     # Visualize optimization process.
     save_optimization_process_video(
@@ -81,6 +88,23 @@ def store_result(problem: Problem, result: Result, save_dir: Path):
     )
     # Visualize final trajectory.
     save_video(problem, result.trajectories[-1], save_dir / "final_trajectory.mp4")
+    # Also save GIFs.
+    subprocess.call(
+        [
+            "ffmpeg",
+            "-i",
+            str(save_dir / "optimization_process.mp4"),
+            str(save_dir / "optimization_process.gif"),
+        ]
+    )
+    subprocess.call(
+        [
+            "ffmpeg",
+            "-i",
+            str(save_dir / "final_trajectory.mp4"),
+            str(save_dir / "final_trajectory.gif"),
+        ]
+    )
 
 
 def main(args: MainArgs):
@@ -127,8 +151,6 @@ def main(args: MainArgs):
         schedule = [ScheduleEntry(**entry_dict) for entry_dict in schedule_json]
 
     result = solve(problem=problem, optimizer_options=args.optimizer, schedule=schedule)
-    logger.info(f"Solved problem in {result.solve_time:.2f} seconds.")
-
     save_dir = Path(
         args.save_dir.format(
             date=time.strftime("%Y-%m-%d"), time=time.strftime("%H-%M-%S")

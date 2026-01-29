@@ -75,6 +75,7 @@ def save_video(problem: Problem, agent_positions: np.ndarray, path: str | Path):
             agent_positions[step : step + 1],
         )
         plt.title(f"Timestep {step}")
+        plt.tight_layout()
         plt.savefig(buf, format="png")
         buf.seek(0)
         image = PIL.Image.open(buf).copy()
@@ -84,6 +85,8 @@ def save_video(problem: Problem, agent_positions: np.ndarray, path: str | Path):
 
     with av.open(path, "w") as container:
         stream = container.add_stream("h264", rate=4)
+        stream.width = images[0].width
+        stream.height = images[0].height
         for img in images:
             frame = av.VideoFrame.from_image(img)
             packet = stream.encode(frame)
@@ -104,6 +107,7 @@ def save_optimization_process_video(
         plt.clf()
         visualize(problem, plt.gca(), agent_positions[step])
         plt.title(f"Timestep {step}")
+        plt.tight_layout()
         plt.savefig(buf, format="png")
         buf.seek(0)
         image = PIL.Image.open(buf).copy()
@@ -113,6 +117,8 @@ def save_optimization_process_video(
 
     with av.open(path, "w") as container:
         stream = container.add_stream("h264", rate=4)
+        stream.width = images[0].width
+        stream.height = images[0].height
         for img in images:
             frame = av.VideoFrame.from_image(img)
             packet = stream.encode(frame)
