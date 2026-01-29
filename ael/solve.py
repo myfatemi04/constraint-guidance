@@ -70,7 +70,7 @@ class ScheduleEntry:
     num_steps: int = 60
     """ The number of steps to operate under these parameters. """
 
-    num_integral: int = 100
+    num_integral: int = 20
     """ The number of integration points to use when computing the nonpenetration score functions. """
 
 

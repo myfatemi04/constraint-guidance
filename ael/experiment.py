@@ -1,80 +1,113 @@
 import json
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pandas as pd
 import tqdm
 
 from ael.problem import Problem
-from ael.solve import ScheduleEntry, solve
+from ael.solve import DEFAULT_SCHEDULE, OptimizerOptions, Result, ScheduleEntry, solve
 
 
-def make_schedule(num_steps_per_sigma: int = 60):
-    return [
-        ScheduleEntry(
-            sigma=0.01, step_size=0.5, num_steps=num_steps_per_sigma, kinetic_weight=50
-        ),
-        ScheduleEntry(
-            sigma=0.001, step_size=0.5, num_steps=num_steps_per_sigma, kinetic_weight=10
-        ),
-        ScheduleEntry(
-            sigma=0.0001,
-            step_size=0.5,
-            num_steps=num_steps_per_sigma,
-            kinetic_weight=2,
-        ),
-    ]
+@dataclass
+class MainArgs:
+    problem_set: str = "dense"
+    """ Loads problems from `./instances_data/instances_{problem_set}.json`. """
+
+    num_robots: int | None = None
+    """ If specified, selects only problems with this many robots. """
+
+    optimizer: OptimizerOptions = field(default_factory=OptimizerOptions)
+    """ Options for the optimizer to use. """
+
+    schedule: str = "default"
+    """ Path to a JSON file specifying the schedule to use, or 'default'. """
+
+    save_dir: str = "./results/{date}/experiment_{time}"
+    """ Path to a directory in which to save results. Allows formatting with `date` and `time` variables, which are formatted as YYYY-mm-dd and HH-MM-SS, respectively. """
 
 
-def job(problem: Problem, schedule: list[ScheduleEntry]):
-    result = solve(problem, schedule=schedule), problem
-    return result
-
-
-if __name__ == "__main__":
-    with open("instances_data/instances_dense.json", "r") as f:
+def main(args: MainArgs):
+    with open(f"instances_data/instances_{args.problem_set}.json", "r") as f:
         data = json.load(f)
 
     problems = [Problem.from_json(d, type="numpy") for d in data]
 
-    for num_steps_per_sigma in [120, 180, 240]:
-        schedule = make_schedule(num_steps_per_sigma)
-        for count in [3, 6, 9]:
-            futures = []
-            data = {
-                "energy": [],
-                "solve_time": [],
-                "agent_obstacle_max_residual": [],
-                "agent_agent_max_residual": [],
-            }
+    if args.schedule == "default":
+        schedule = DEFAULT_SCHEDULE
+    else:
+        schedule_path = Path(args.schedule)
+        if not schedule_path.exists():
+            raise ValueError(f"Schedule path {schedule_path} does not exist.")
 
-            with ProcessPoolExecutor() as executor:
-                for problem in problems:
-                    if problem.num_agents != count:
-                        continue
+        with open(schedule_path) as f:
+            schedule_json = json.load(f)
 
-                    futures.append(executor.submit(job, problem, schedule))
+        schedule = [ScheduleEntry(**entry_dict) for entry_dict in schedule_json]
 
-                for future in tqdm.tqdm(as_completed(futures), total=len(futures)):
-                    result, problem = future.result()
-                    agent_obstacle_max_residual = np.max(
-                        result.agent_obstacle_constraint_residuals
-                    )
-                    agent_agent_max_residual = np.max(
-                        result.agent_agent_constraint_residuals
-                    )
-                    data["solve_time"].append(result.solve_time)
-                    data["agent_obstacle_max_residual"].append(
-                        agent_obstacle_max_residual
-                    )
-                    data["agent_agent_max_residual"].append(agent_agent_max_residual)
-                    data["energy"].append(
-                        (result.trajectories[-1] ** 2).sum(axis=-1).mean()
-                    )
+    save_dir = Path(
+        args.save_dir.format(
+            date=time.strftime("%Y-%m-%d"), time=time.strftime("%H-%M-%S")
+        )
+    )
+    save_dir.mkdir(parents=True, exist_ok=True)
 
-                executor.shutdown(wait=True)
+    data = {
+        "energy": [],
+        "solve_time": [],
+        "agent_obstacle_max_residual": [],
+        "agent_agent_max_residual": [],
+        "velocity_max_residual": [],
+        "identifier": [],
+        "num_robots": [],
+    }
 
-            pd.DataFrame(data).to_csv(
-                f"experiment_results_{count}_{num_steps_per_sigma=}_decrease_kinetic.csv",
-                index=False,
+    with ProcessPoolExecutor() as executor:
+        futures = []
+
+        with open(save_dir / "schedule.json", "w") as f:
+            json.dump([entry.__dict__ for entry in schedule], f, indent=4)
+
+        with open(save_dir / "optimizer.json", "w") as f:
+            json.dump(args.optimizer.__dict__, f, indent=4)
+
+        for problem in problems:
+            if args.num_robots is not None and problem.num_agents != args.num_robots:
+                continue
+
+            futures.append(executor.submit(solve, problem, schedule=schedule))
+
+        for future in tqdm.tqdm(as_completed(futures), total=len(futures)):
+            result = cast(Result, future.result())
+            agent_obstacle_max_residual = np.max(
+                result.constraint_satisfaction.agent_obstacle_constraint_residuals
             )
+            agent_agent_max_residual = np.max(
+                result.constraint_satisfaction.agent_agent_constraint_residuals
+            )
+            velocity_max_residual = np.max(
+                result.constraint_satisfaction.velocity_constraint_residuals
+            )
+            data["solve_time"].append(result.solve_time)
+            data["agent_obstacle_max_residual"].append(agent_obstacle_max_residual)
+            data["agent_agent_max_residual"].append(agent_agent_max_residual)
+            data["velocity_max_residual"].append(velocity_max_residual)
+            data["energy"].append((result.trajectories[-1] ** 2).sum(axis=-1).mean())
+            data["num_robots"].append(result.trajectories[-1].shape[1])
+            data["identifier"].append(result.identifier)
+
+        executor.shutdown(wait=True)
+
+        df = pd.DataFrame(data)
+        df.to_csv(save_dir / "table.csv", index=False)
+
+
+if __name__ == "__main__":
+    import tyro
+
+    args = tyro.cli(MainArgs)
+    main(args)

@@ -55,6 +55,7 @@ class Problem(Generic[TensorType]):
     agent_max_speeds: TensorType
     obstacle_positions: TensorType
     obstacle_radii: TensorType
+    identifier: str | None = None
 
     @property
     def num_agents(self):
@@ -96,4 +97,7 @@ class Problem(Generic[TensorType]):
             agent_reference_trajectory=None,
             obstacle_positions=_tensor(entry["obstacles"]["positions"], type=type),
             obstacle_radii=_tensor(entry["obstacles"]["radii"], type=type),
+            identifier=f"sample_{entry['sample_idx']}"
+            if "sample_idx" in entry
+            else None,
         )
