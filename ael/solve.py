@@ -52,7 +52,7 @@ class OptimizerOptions:
     eps: float = 1e-8
     """ Adam optimizer $\\epsilon$ parameter. """
 
-    magnitude_clip: float = 10000.0
+    magnitude_clip: float = 1.0
     """ Represents the maximum L2 norm for score predictions of individual obstacles. """
 
 
@@ -76,9 +76,9 @@ class ScheduleEntry:
 
 DEFAULT_SCHEDULE = [
     ScheduleEntry(sigma=0.01, step_size=0.5, num_steps=60, kinetic_weight=50),
-    ScheduleEntry(sigma=0.001, step_size=0.5, num_steps=60, kinetic_weight=10),
-    ScheduleEntry(sigma=0.001, step_size=0.5, num_steps=30, kinetic_weight=2),
-    ScheduleEntry(sigma=0.001, step_size=0.5, num_steps=30, kinetic_weight=0.01),
+    ScheduleEntry(sigma=0.01, step_size=0.5, num_steps=60, kinetic_weight=10),
+    ScheduleEntry(sigma=0.001, step_size=0.5, num_steps=60, kinetic_weight=1),
+    ScheduleEntry(sigma=0.001, step_size=0.5, num_steps=60, kinetic_weight=0.01),
 ]
 
 

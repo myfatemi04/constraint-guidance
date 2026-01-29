@@ -130,8 +130,8 @@ def compute_agent_obstacle_score_batched_helper(
     obs_rad_B: np.ndarray,
     sigma_B: np.ndarray,
     n_integral=10,
-    denominator_threshold=0.00,
-    numerator_threshold=0.00,
+    denominator_threshold=0.01,
+    numerator_threshold=0.01,
 ):
     """
     Here, 'B' indicates the batch dimension, 'D' indicates the spatial dimension, and 'T' indicates
@@ -211,8 +211,8 @@ def compute_agent_obstacle_score_batched_helper(
         numerator_integrand_T_B.sum(axis=0) * dr_B[numerator_mask]
     )
 
-    # print("denominator proportion:", denominator_mask.sum() / denominator_B.shape[0])
-    # print("numerator proportion:", numerator_mask.sum() / denominator_B.shape[0])
+    print("denominator proportion:", denominator_mask.sum() / denominator_B.shape[0])
+    print("numerator proportion:", numerator_mask.sum() / denominator_B.shape[0])
 
     # Multiplies by the component vector for epsilon'_x.
     numerator_D_B = (
