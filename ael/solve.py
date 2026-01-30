@@ -75,6 +75,8 @@ class ScheduleEntry:
 
 
 DEFAULT_SCHEDULE = [
+    ScheduleEntry(sigma=1.0, step_size=0.5, num_steps=60, kinetic_weight=50),
+    ScheduleEntry(sigma=0.1, step_size=0.5, num_steps=60, kinetic_weight=50),
     ScheduleEntry(sigma=0.01, step_size=0.5, num_steps=60, kinetic_weight=50),
     ScheduleEntry(sigma=0.01, step_size=0.5, num_steps=60, kinetic_weight=10),
     ScheduleEntry(sigma=0.001, step_size=0.5, num_steps=60, kinetic_weight=1),
@@ -140,13 +142,17 @@ def solve(
     identifier: str | None = None,
 ) -> Result:
     # TODO: Initialize from prior distribution based on energy.
-    trajectory = (
-        np.random.randn(64, problem.num_agents, 2) * 0.5
-        if initial_trajectory is None
-        else initial_trajectory.copy()
-    )
+    # trajectory = (
+    #     np.random.randn(64, problem.num_agents, 2) * 0.5
+    #     if initial_trajectory is None
+    #     else initial_trajectory.copy()
+    # )
     start_positions = problem.agent_start_positions
     end_positions = problem.agent_end_positions
+
+    trajectory = np.linspace(start_positions, end_positions, num=64, axis=0)
+    trajectory += np.random.randn(*trajectory.shape) * 0.1
+
     trajectory[0] = start_positions
     trajectory[-1] = end_positions
 

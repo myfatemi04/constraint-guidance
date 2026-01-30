@@ -35,7 +35,9 @@ class MainArgs:
     """ Path to a directory in which to save results. Allows formatting with `date` and `time` variables, which are formatted as YYYY-mm-dd and HH-MM-SS, respectively. """
 
 
-def store_result(problem: Problem, result: Result, save_dir: Path):
+def store_result(
+    problem: Problem, result: Result, schedule: list[ScheduleEntry], save_dir: Path
+):
     """Helper function that stores all tensors. Also stores high-level information like the time taken to solve, maximum constraint violations, and objective function values. Furthermore, visualizes the optimization process and final trajectories."""
 
     import json
@@ -69,6 +71,7 @@ def store_result(problem: Problem, result: Result, save_dir: Path):
                 np.max(result.constraint_satisfaction.velocity_constraint_residuals)
             ),
         },
+        "schedule": [entry.__dict__ for entry in schedule],
     }
     with open(save_dir / "info.json", "w") as f:
         json.dump(info_dict, f, indent=4)
@@ -129,7 +132,7 @@ def main(args: MainArgs):
     elif args.num_robots is not None:
         problem = None
         for pd in problems:
-            if pd["num_agents"] == args.num_robots:
+            if len(pd["agents"]["start_positions"]) == args.num_robots:
                 problem = Problem.from_json(pd, type="numpy")
                 break
         else:
@@ -157,7 +160,7 @@ def main(args: MainArgs):
         )
     )
     save_dir.mkdir(parents=True, exist_ok=True)
-    store_result(problem, result, save_dir)
+    store_result(problem, result, schedule, save_dir)
 
 
 if __name__ == "__main__":
