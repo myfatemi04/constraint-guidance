@@ -473,7 +473,7 @@ def evaluate_trajectory_unscaled_probabilities(
     return unscaled_probabilities
 
 
-def compute_score_mppi(
+def compute_score_mppi_unfactorized(
     trajectory: np.ndarray,
     problem: Problem[np.ndarray],
     sigma: float,
@@ -668,6 +668,8 @@ def compute_score_mppi_factorized(
         # divide over batch dimension
         np.sum(evaluation.overall, axis=0) + eps
     )
+    # acceptance = evaluation.overall > 0
+    # print(acceptance.sum() / np.prod(evaluation.overall.shape))
     # score = 1 / sigma**2 * np.sum(noise * weights[:, :, :, None], axis=0)
     score = np.sum(noise * weights[:, :, :, None], axis=0)
     return score

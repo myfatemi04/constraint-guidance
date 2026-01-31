@@ -16,8 +16,8 @@ from ael.constraint_evaluation import (
 from ael.problem import Problem
 from ael.score_function import (
     compute_score,
-    compute_score_mppi,
     compute_score_mppi_factorized,
+    compute_score_mppi_unfactorized,
 )
 
 
@@ -103,33 +103,34 @@ DEFAULT_SCHEDULE = [
 
 DEFAULT_SCHEDULE_UNFACTORIZED_MPPI = [
     ScheduleEntry(
-        sigma=1.0,
+        sigma=0.25,
         step_size=0.1,
         num_steps=200,
         score_fn_kwargs=dict(
-            agent_agent_constraint_tolerance=1.0,
-            agent_obstacle_constraint_tolerance=1.0,
-            velocity_constraint_tolerance=1.0,
-        ),
-    ),
-    ScheduleEntry(
-        sigma=0.5,
-        step_size=0.1,
-        num_steps=200,
-        score_fn_kwargs=dict(
-            agent_agent_constraint_tolerance=0.5,
-            agent_obstacle_constraint_tolerance=0.5,
-            velocity_constraint_tolerance=0.5,
+            agent_agent_constraint_tolerance=0.25,
+            agent_obstacle_constraint_tolerance=0.25,
+            velocity_constraint_tolerance=0.25,
         ),
     ),
     ScheduleEntry(
         sigma=0.1,
         step_size=0.1,
-        num_steps=200,
+        num_steps=100,
         score_fn_kwargs=dict(
-            agent_agent_constraint_tolerance=0.1,
-            agent_obstacle_constraint_tolerance=0.1,
-            velocity_constraint_tolerance=0.1,
+            agent_agent_constraint_tolerance=1e-1,
+            agent_obstacle_constraint_tolerance=1e-1,
+            velocity_constraint_tolerance=1e-1,
+        ),
+    ),
+    ScheduleEntry(
+        sigma=0.1,
+        step_size=0.1,
+        num_steps=100,
+        score_fn_kwargs=dict(
+            agent_agent_constraint_tolerance=1e-1,
+            # Tighten the agent-obstacle constraint.
+            agent_obstacle_constraint_tolerance=0.02,
+            velocity_constraint_tolerance=1e-1,
         ),
     ),
     ScheduleEntry(
@@ -137,9 +138,9 @@ DEFAULT_SCHEDULE_UNFACTORIZED_MPPI = [
         step_size=0.1,
         num_steps=200,
         score_fn_kwargs=dict(
-            agent_agent_constraint_tolerance=0.01,
-            agent_obstacle_constraint_tolerance=0.01,
-            velocity_constraint_tolerance=0.01,
+            agent_agent_constraint_tolerance=1e-2,
+            agent_obstacle_constraint_tolerance=1e-2,
+            velocity_constraint_tolerance=1e-2,
         ),
     ),
 ]
@@ -196,7 +197,7 @@ def solve(
                         **(schedule_entry.score_fn_kwargs or {}),
                     )
                 case ScoreComputationMethod.UNFACTORIZED_MPPI:
-                    score = compute_score_mppi(
+                    score = compute_score_mppi_unfactorized(
                         trajectory,
                         problem=problem,
                         sigma=schedule_entry.sigma,
