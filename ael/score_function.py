@@ -638,9 +638,9 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
         kinetic_energy=result["kinetic_energy"],
         overall=(
             result["kinetic_energy"]
-            # * result["agent_agent"]
-            # * result["agent_obstacle"]
-            # * result["velocity"]
+            * result["agent_agent"]
+            * result["agent_obstacle"]
+            * result["velocity"]
         ),
     )
 
