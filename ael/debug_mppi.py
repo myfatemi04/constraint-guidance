@@ -334,7 +334,7 @@ class TrajectoryProbabilityDebugger:
             self.fig.canvas.draw_idle()
 
 
-def main():
+def debug_likelihood_function():
     # Load a problem instance
     with open("instances_data/instances_simple.json", "r") as f:
         data = json.load(f)
@@ -355,5 +355,51 @@ def main():
     plt.show()
 
 
+def debug_sanity_kinetic_energy():
+    problem = Problem(
+        num_timesteps=32,
+        agent_start_positions=np.array([[0.0, 0.0]]),
+        agent_end_positions=np.array([[2.0, 2.0]]),
+        agent_radii=np.array([0.1]),
+        agent_reference_trajectory=None,
+        obstacle_positions=np.empty((0, 2)),
+        obstacle_radii=np.empty((0,)),
+        agent_max_speeds=np.array([1.0]),
+    )
+    trajectory = np.linspace(
+        problem.agent_start_positions,
+        problem.agent_end_positions,
+        num=32,
+        axis=0,
+    ) + 10 * np.random.randn(32, 1, 2)
+    num_noise_samples = 10
+    sigma = 0.1
+    for step in range(2000):
+        noise_batch = np.random.randn(num_noise_samples, *trajectory.shape) * sigma
+        evaluation = evaluate_trajectory_unscaled_probabilities_factorized(
+            trajectory,
+            noise_batch,
+            problem,
+            agent_agent_constraint_tolerance=0.0,
+            agent_obstacle_constraint_tolerance=0.0,
+            velocity_constraint_tolerance=0.0,
+        )
+        weights = evaluation.kinetic_energy
+        weights = weights / weights.sum(axis=0)
+        # (b, t, a, 2) * (b, t, a, 1) -> (b, t, a, 2)
+        noise_weighted = (noise_batch * weights[:, :, :, np.newaxis]).sum(axis=0)
+        trajectory += noise_weighted
+
+        trajectory[0] = problem.agent_start_positions
+        trajectory[-1] = problem.agent_end_positions
+
+    plt.plot(trajectory[:, 0, 0], trajectory[:, 0, 1], "o-")
+    plt.title("Kinetic Energy Minimization Sanity Check")
+    plt.xlabel("X")
+    plt.ylabel("Y")
+    plt.axis("equal")
+    plt.show()
+
+
 if __name__ == "__main__":
-    main()
+    debug_sanity_kinetic_energy()

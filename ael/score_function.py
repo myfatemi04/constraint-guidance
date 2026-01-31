@@ -558,42 +558,72 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
     velocity_squared_baseline = ((trajectory[1:] - trajectory[:-1]) ** 2).sum(axis=-1)
     # Same endpoint, but adding noise to starting point. The start point doesn't matter because it's fixed
     # to the agent's current position.
-    velocity_squared_per_deviation = (
+    velocity_squared_per_deviation_reverse = (
         ((trajectory[1:] + noise_batch[:, 1:]) - trajectory[:-1]) ** 2
+    ).sum(axis=-1)
+    velocity_squared_per_deviation_forward = (
+        ((trajectory[1:]) - (trajectory[:-1] + noise_batch[:, :-1])) ** 2
     ).sum(axis=-1)
 
     # (b, t, a)
     velocity_constraint_residual_baseline = (
         np.sqrt(velocity_squared_baseline) - problem.agent_max_speeds
     )
-    velocity_constraint_residual_per_deviation = (
-        np.sqrt(velocity_squared_per_deviation) - problem.agent_max_speeds
+    velocity_constraint_residual_per_deviation_reverse = (
+        np.sqrt(velocity_squared_per_deviation_reverse) - problem.agent_max_speeds
+    )
+    velocity_constraint_residual_per_deviation_forward = (
+        np.sqrt(velocity_squared_per_deviation_forward) - problem.agent_max_speeds
     )
 
     result["agent_agent"] *= agent_agent_ok.all(axis=-1).astype(np.float32)
     result["agent_obstacle"] *= agent_obstacle_ok.all(axis=-1).astype(np.float32)
 
-    if use_velocity_baseline:
-        velocity_ok = (
-            velocity_constraint_residual_per_deviation < velocity_constraint_tolerance
-        ) < (velocity_constraint_residual_baseline < velocity_constraint_tolerance)
-    else:
-        velocity_ok = (
-            velocity_constraint_residual_per_deviation < velocity_constraint_tolerance
-        )
+    # if use_velocity_baseline:
+    #     velocity_ok_forward = (
+    #         velocity_constraint_residual_per_deviation_reverse
+    #         < velocity_constraint_tolerance
+    #     ) < (velocity_constraint_residual_baseline < velocity_constraint_tolerance)
+    # else:
+    velocity_ok_forward = (
+        velocity_constraint_residual_per_deviation_reverse
+        < velocity_constraint_tolerance
+    )
+    velocity_ok_reverse = (
+        velocity_constraint_residual_per_deviation_forward
+        < velocity_constraint_tolerance
+    )
 
     # Only apply velocity constraint effects to points after the starting point.
-    result["velocity"][:, 1:] *= velocity_ok.astype(np.float32)
+    result["velocity"][:, 1:] *= velocity_ok_forward.astype(np.float32)
+    result["velocity"][:, :-1] *= velocity_ok_reverse.astype(np.float32)
 
     # Evaluate kinetic energy change.
-    delta_kinetic_energy_per_deviation = 0.5 * (
-        velocity_squared_per_deviation - velocity_squared_baseline
+    delta_kinetic_energy_per_deviation_reverse = 0.5 * (
+        velocity_squared_per_deviation_reverse - velocity_squared_baseline
     )
-    delta_kinetic_energy_per_deviation -= np.mean(delta_kinetic_energy_per_deviation)
-    delta_kinetic_energy_per_deviation /= (
-        np.std(delta_kinetic_energy_per_deviation) + 1e-8
+    delta_kinetic_energy_per_deviation_reverse -= np.mean(
+        delta_kinetic_energy_per_deviation_reverse
     )
-    result["kinetic_energy"][:, 1:] *= np.exp(-delta_kinetic_energy_per_deviation)
+    delta_kinetic_energy_per_deviation_reverse /= (
+        np.std(delta_kinetic_energy_per_deviation_reverse) + 1e-8
+    )
+    delta_kinetic_energy_per_deviation_forward = 0.5 * (
+        velocity_squared_per_deviation_forward - velocity_squared_baseline
+    )
+    delta_kinetic_energy_per_deviation_forward -= np.mean(
+        delta_kinetic_energy_per_deviation_forward
+    )
+    delta_kinetic_energy_per_deviation_forward /= (
+        np.std(delta_kinetic_energy_per_deviation_forward) + 1e-8
+    )
+
+    result["kinetic_energy"][:, 1:] *= np.exp(
+        -delta_kinetic_energy_per_deviation_reverse
+    )
+    result["kinetic_energy"][:, :-1] *= np.exp(
+        -delta_kinetic_energy_per_deviation_forward
+    )
 
     return MPPITrajectoryEvaluation(
         agent_agent=result["agent_agent"],
@@ -618,8 +648,7 @@ def compute_score_mppi_factorized(
     agent_obstacle_constraint_tolerance: float,
     velocity_constraint_tolerance: float,
 ):
-    trajectory_batch = trajectory[np.newaxis, ...].repeat(repeats=num_samples, axis=0)  # ty:ignore[no-matching-overload]
-    noise = np.random.normal(size=trajectory_batch.shape) * sigma
+    noise = np.random.normal(size=(num_samples, *trajectory.shape)) * sigma
     evaluation = evaluate_trajectory_unscaled_probabilities_factorized(
         trajectory,
         noise,
@@ -630,7 +659,8 @@ def compute_score_mppi_factorized(
     )
     eps = 1e-8
     weights = evaluation.overall / (
-        np.sum(evaluation.overall, axis=1, keepdims=True) + eps
+        # divide over batch dimension
+        np.sum(evaluation.overall, axis=0, keepdims=True) + eps
     )
     score = 1 / sigma**2 * np.sum(noise * weights[:, :, :, None], axis=0)
     return score
