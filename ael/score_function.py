@@ -2,6 +2,7 @@ from functools import lru_cache
 
 import numpy as np
 
+from ael.constraint_evaluation import compute_constraint_residuals
 from ael.problem import Problem
 
 
@@ -426,4 +427,69 @@ def compute_score(
 
     score = score + kinetic_weight * compute_kinetic_energy_score(trajectory, sigma)
 
+    return score
+
+
+def evaluate_trajectory_likelihood(
+    trajectory_batch: np.ndarray,
+    problem: Problem[np.ndarray],
+    agent_agent_constraint_tolerance: float,
+    agent_obstacle_constraint_tolerance: float,
+    velocity_constraint_tolerance: float,
+):
+    """Computes an unbiased estimate of trajectory likelihoods."""
+    constraint_result = compute_constraint_residuals(problem, trajectory_batch)
+    agent_agent_ok = ~(
+        constraint_result.agent_agent_constraint_residuals
+        > agent_agent_constraint_tolerance
+    ).reshape(trajectory_batch.shape[0], -1).any(axis=-1)
+    agent_obstacle_ok = ~(
+        constraint_result.agent_obstacle_constraint_residuals
+        > agent_obstacle_constraint_tolerance
+    ).reshape(trajectory_batch.shape[0], -1).any(axis=-1)
+    velocity_ok = ~(
+        constraint_result.velocity_constraint_residuals > velocity_constraint_tolerance
+    ).reshape(trajectory_batch.shape[0], -1).any(axis=-1)
+    ok = agent_agent_ok & agent_obstacle_ok & velocity_ok
+
+    # Evaluate kinetic energy.
+    # (b, t-1, a)
+    velocities_squared = (
+        (trajectory_batch[:, 1:] - trajectory_batch[:, :-1]) ** 2
+    ).sum(axis=-1)
+    kinetic_energies = 0.5 * velocities_squared.reshape(
+        trajectory_batch.shape[0], -1
+    ).sum(axis=-1)
+    # Compute kinetic energy likelihood. Stabilize by subtracting mean of K trajectories.
+    kinetic_energies = kinetic_energies - (
+        kinetic_energies[ok].mean() if ok.any() else 0.0
+    )
+    likelihoods = ok.astype(np.float32) * np.exp(-kinetic_energies)
+    return likelihoods
+
+
+def compute_score_mppi(
+    trajectory: np.ndarray,
+    problem: Problem[np.ndarray],
+    sigma: float,
+    num_samples: int,
+    agent_agent_constraint_tolerance: float,
+    agent_obstacle_constraint_tolerance: float,
+    velocity_constraint_tolerance: float,
+):
+    trajectory_batch = trajectory[np.newaxis, ...].repeat(repeats=num_samples, axis=0)  # ty:ignore[no-matching-overload]
+    noise = np.random.normal(size=trajectory_batch.shape)
+    trajectory_likelihood_batch = evaluate_trajectory_likelihood(
+        trajectory_batch + noise * sigma,
+        problem,
+        agent_agent_constraint_tolerance,
+        agent_obstacle_constraint_tolerance,
+        velocity_constraint_tolerance,
+    )
+    trajectory_weights = np.exp(trajectory_likelihood_batch)
+    score = (
+        np.sum(noise * trajectory_weights[:, None, None, None], axis=0)
+        / (np.sum(trajectory_weights) + 1e-8)
+        / (sigma**2)
+    )
     return score

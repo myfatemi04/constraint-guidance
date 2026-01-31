@@ -74,10 +74,12 @@ if __name__ == "__main__":
         "results/2026-01-29/experiment_16-18-37_dense_num_robots=any/table.csv"
     )
     connected_room_df = pd.read_csv(
-        "results/2026-01-29/experiment_16-25-41_connected_room_num_robots=any/table.csv"
+        # "results/2026-01-29/experiment_16-25-41_connected_room_num_robots=any/table.csv"
+        "results/2026-01-30/experiment_13-32-20_connected_room_num_robots=any/table.csv"
     )
     shelf_df = pd.read_csv(
-        "results/2026-01-29/experiment_16-27-56_shelf_num_robots=any/table.csv"
+        "results/2026-01-30/experiment_13-27-10_shelf_num_robots=any/table.csv"
+        # "results/2026-01-29/experiment_16-27-56_shelf_num_robots=any/table.csv"
     )
     simple_df = pd.read_csv(
         "results/2026-01-29/experiment_16-44-37_simple_num_robots=any/table.csv"

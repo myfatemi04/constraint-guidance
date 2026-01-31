@@ -2,26 +2,19 @@
 The main solving algorithm.
 """
 
+import enum
 import time
 from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
 
+from ael.constraint_evaluation import (
+    ConstraintSatisfaction,
+    compute_constraint_residuals,
+)
 from ael.problem import Problem
-from ael.score_function import compute_score
-
-
-@dataclass
-class ConstraintSatisfaction:
-    agent_obstacle_constraint_residuals: np.ndarray
-    """ Residuals for agent-obstacle nonpenetration constraints. If positive, represents the amount by which the signed distance into the obstacle exceeds zero. Shape (t, num_agents, num_obstacles). """
-
-    agent_agent_constraint_residuals: np.ndarray
-    """ Residuals for agent-agent nonpenetration constraints. If positive, represents the amount by which the signed distance into another agent exceeds zero. Shape (t, num_agents, num_agents). """
-
-    velocity_constraint_residuals: np.ndarray
-    """ Residuals for velocity constraints. If positive, represents the amount by which the velocity exceeds the maximum allowed velocity. Shape (t-1, num_agents). """
+from ael.score_function import compute_score, compute_score_mppi
 
 
 @dataclass
@@ -74,6 +67,11 @@ class ScheduleEntry:
     """ The number of integration points to use when computing the nonpenetration score functions. """
 
 
+class ScoreComputationMethod(str, enum.Enum):
+    APPROXIMATE_V0 = "approximate_v0"
+    MPPI = "mppi"
+
+
 DEFAULT_SCHEDULE = [
     ScheduleEntry(sigma=1.0, step_size=0.5, num_steps=60, kinetic_weight=50),
     ScheduleEntry(sigma=0.1, step_size=0.5, num_steps=60, kinetic_weight=50),
@@ -84,69 +82,15 @@ DEFAULT_SCHEDULE = [
 ]
 
 
-def compute_constraint_residuals(
-    problem: Problem[np.ndarray], trajectories: np.ndarray
-) -> ConstraintSatisfaction:
-    """Return the constraint residuals for agent-obstacle and agent-agent distances, respectively."""
-
-    ### Agent-agent nonpenetration constraints ###
-    agent_pairwise_distances = (
-        # (t, num_agents, 1, 2) - (t, 1, num_agents, 2) -> (t, num_agents, num_agents, 2)
-        trajectories[:, :, np.newaxis, :] - trajectories[:, np.newaxis, :, :]
-    )
-    agent_pairwise_distances = np.linalg.norm(agent_pairwise_distances, axis=-1)
-    min_acceptable_distances = (
-        problem.agent_radii[:, np.newaxis] + problem.agent_radii[np.newaxis, :]
-    )
-    agent_agent_constraint_residuals = (
-        min_acceptable_distances - agent_pairwise_distances
-    )
-    agent_agent_constraint_residuals[agent_agent_constraint_residuals < 0] = 0.0
-    diag_indices = np.diag_indices(agent_agent_constraint_residuals.shape[1])
-    agent_agent_constraint_residuals[:, diag_indices[0], diag_indices[1]] = 0.0
-    assert (np.diagonal(agent_agent_constraint_residuals, axis1=1, axis2=2) == 0).all()
-
-    ### Agent-obstacle nonpenetration constraints ###
-    agent_obstacle_distances = (
-        # (t, num_agents, 1, 2) - (1, num_obstacles, 2) -> (t, num_agents, num_obstacles, 2)
-        trajectories[:, :, np.newaxis, :] - problem.obstacle_positions[np.newaxis, :, :]
-    )
-    agent_obstacle_distances = np.linalg.norm(agent_obstacle_distances, axis=-1)
-    min_acceptable_agent_obstacle_distances = (
-        # (num_agents, 1) + (1, num_obstacles) -> (num_agents, num_obstacles)
-        problem.agent_radii[:, np.newaxis] + problem.obstacle_radii[np.newaxis, :]
-    )
-    agent_obstacle_constraint_residuals = (
-        min_acceptable_agent_obstacle_distances - agent_obstacle_distances
-    )
-    agent_obstacle_constraint_residuals[agent_obstacle_constraint_residuals < 0] = 0.0
-
-    ### Velocity constraints ###
-    velocities = trajectories[1:] - trajectories[:-1]
-    speeds = np.linalg.norm(velocities, axis=-1)
-    velocity_constraint_residuals = speeds - problem.agent_max_speeds[np.newaxis, :]
-    velocity_constraint_residuals[velocity_constraint_residuals < 0] = 0.0
-
-    return ConstraintSatisfaction(
-        agent_obstacle_constraint_residuals,
-        agent_agent_constraint_residuals,
-        velocity_constraint_residuals,
-    )
-
-
 def solve(
     problem: Problem,
+    score_computation_method: ScoreComputationMethod,
     optimizer_options: OptimizerOptions = OptimizerOptions(),
     schedule: list[ScheduleEntry] = DEFAULT_SCHEDULE,
     initial_trajectory: np.ndarray | None = None,
     identifier: str | None = None,
 ) -> Result:
     # TODO: Initialize from prior distribution based on energy.
-    # trajectory = (
-    #     np.random.randn(64, problem.num_agents, 2) * 0.5
-    #     if initial_trajectory is None
-    #     else initial_trajectory.copy()
-    # )
     start_positions = problem.agent_start_positions
     end_positions = problem.agent_end_positions
 
@@ -168,15 +112,27 @@ def solve(
 
     for schedule_entry in schedule:
         for i in range(schedule_entry.num_steps):
-            score = compute_score(
-                trajectory,
-                sigma=schedule_entry.sigma,
-                problem=problem,
-                include_obstacles=True,
-                n_integral=schedule_entry.num_integral,
-                kinetic_weight=schedule_entry.kinetic_weight,
-                magnitude_clip=optimizer_options.magnitude_clip,
-            )
+            match score_computation_method:
+                case ScoreComputationMethod.APPROXIMATE_V0:
+                    score = compute_score(
+                        trajectory,
+                        sigma=schedule_entry.sigma,
+                        problem=problem,
+                        include_obstacles=True,
+                        n_integral=schedule_entry.num_integral,
+                        kinetic_weight=schedule_entry.kinetic_weight,
+                        magnitude_clip=optimizer_options.magnitude_clip,
+                    )
+                case ScoreComputationMethod.MPPI:
+                    score = compute_score_mppi(
+                        trajectory,
+                        problem=problem,
+                        sigma=schedule_entry.sigma,
+                        num_samples=100,
+                        agent_agent_constraint_tolerance=1e-3,
+                        agent_obstacle_constraint_tolerance=1e-3,
+                        velocity_constraint_tolerance=1e-3,
+                    )
             beta1_t *= optimizer_options.beta1
             beta2_t *= optimizer_options.beta2
 

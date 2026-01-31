@@ -8,7 +8,14 @@ import numpy as np
 from loguru import logger
 
 from ael.problem import Problem
-from ael.solve import DEFAULT_SCHEDULE, OptimizerOptions, Result, ScheduleEntry, solve
+from ael.solve import (
+    DEFAULT_SCHEDULE,
+    OptimizerOptions,
+    Result,
+    ScheduleEntry,
+    ScoreComputationMethod,
+    solve,
+)
 from ael.visualize import save_optimization_process_video, save_video, visualize
 
 PROBLEM_SET_ROOT_DIR = Path(__file__).resolve().parents[1] / "instances_data"
@@ -34,9 +41,15 @@ class MainArgs:
     save_dir: str = "./results/demo_{date}T{time}"
     """ Path to a directory in which to save results. Allows formatting with `date` and `time` variables, which are formatted as YYYY-mm-dd and HH-MM-SS, respectively. """
 
+    score_computation_method: ScoreComputationMethod = ScoreComputationMethod.MPPI
+
 
 def store_result(
-    problem: Problem, result: Result, schedule: list[ScheduleEntry], save_dir: Path
+    problem: Problem,
+    result: Result,
+    schedule: list[ScheduleEntry],
+    save_dir: Path,
+    score_computation_method: ScoreComputationMethod,
 ):
     """Helper function that stores all tensors. Also stores high-level information like the time taken to solve, maximum constraint violations, and objective function values. Furthermore, visualizes the optimization process and final trajectories."""
 
@@ -72,6 +85,7 @@ def store_result(
             ),
         },
         "schedule": [entry.__dict__ for entry in schedule],
+        "score_computation_method": score_computation_method.name,
     }
     with open(save_dir / "info.json", "w") as f:
         json.dump(info_dict, f, indent=4)
@@ -153,14 +167,25 @@ def main(args: MainArgs):
 
         schedule = [ScheduleEntry(**entry_dict) for entry_dict in schedule_json]
 
-    result = solve(problem=problem, optimizer_options=args.optimizer, schedule=schedule)
+    result = solve(
+        problem=problem,
+        score_computation_method=args.score_computation_method,
+        optimizer_options=args.optimizer,
+        schedule=schedule,
+    )
     save_dir = Path(
         args.save_dir.format(
             date=time.strftime("%Y-%m-%d"), time=time.strftime("%H-%M-%S")
         )
     )
     save_dir.mkdir(parents=True, exist_ok=True)
-    store_result(problem, result, schedule, save_dir)
+    store_result(
+        problem,
+        result,
+        schedule,
+        save_dir,
+        score_computation_method=args.score_computation_method,
+    )
 
 
 if __name__ == "__main__":
