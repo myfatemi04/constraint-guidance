@@ -14,7 +14,11 @@ from ael.constraint_evaluation import (
     compute_constraint_residuals,
 )
 from ael.problem import Problem
-from ael.score_function import compute_score, compute_score_mppi
+from ael.score_function import (
+    compute_score,
+    compute_score_mppi,
+    compute_score_mppi_factorized,
+)
 
 
 @dataclass
@@ -70,6 +74,7 @@ class ScheduleEntry:
 class ScoreComputationMethod(str, enum.Enum):
     APPROXIMATE_V0 = "approximate_v0"
     UNFACTORIZED_MPPI = "unfactorized_mppi"
+    FACTORIZED_MPPI = "factorized_mppi"
 
 
 DEFAULT_SCHEDULE = [
@@ -182,6 +187,14 @@ def solve(
                     )
                 case ScoreComputationMethod.UNFACTORIZED_MPPI:
                     score = compute_score_mppi(
+                        trajectory,
+                        problem=problem,
+                        sigma=schedule_entry.sigma,
+                        num_samples=100,
+                        **(schedule_entry.score_fn_kwargs or {}),
+                    )
+                case ScoreComputationMethod.FACTORIZED_MPPI:
+                    score = compute_score_mppi_factorized(
                         trajectory,
                         problem=problem,
                         sigma=schedule_entry.sigma,

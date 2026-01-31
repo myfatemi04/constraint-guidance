@@ -39,11 +39,11 @@ class MainArgs:
     schedule: str = "default"
     """ Path to a JSON file specifying the schedule to use, or 'default'. """
 
-    save_dir: str = "./results/demo_{date}T{time}"
+    save_dir: str = "./results/demo/{date}/{time}"
     """ Path to a directory in which to save results. Allows formatting with `date` and `time` variables, which are formatted as YYYY-mm-dd and HH-MM-SS, respectively. """
 
     score_computation_method: ScoreComputationMethod = (
-        ScoreComputationMethod.UNFACTORIZED_MPPI
+        ScoreComputationMethod.FACTORIZED_MPPI
     )
 
 
@@ -93,7 +93,9 @@ def store_result(
     with open(save_dir / "info.json", "w") as f:
         json.dump(info_dict, f, indent=4)
 
-    logger.info(json.dumps(info_dict, indent=4))
+    logger.info(
+        json.dumps({k: v for (k, v) in info_dict.items() if k != "schedule"}, indent=4)
+    )
 
     # Visualize final trajectories.
     plt.figure(figsize=(6, 6))

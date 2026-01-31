@@ -1,8 +1,13 @@
+from dataclasses import dataclass
 from functools import lru_cache
 
 import numpy as np
 
-from ael.constraint_evaluation import compute_constraint_residuals
+from ael.constraint_evaluation import (
+    compute_agent_agent_constraint_residuals,
+    compute_agent_obstacle_constraint_residuals,
+    compute_constraint_residuals,
+)
 from ael.problem import Problem
 
 
@@ -430,14 +435,14 @@ def compute_score(
     return score
 
 
-def evaluate_trajectory_likelihood(
+def evaluate_trajectory_unscaled_probabilities(
     trajectory_batch: np.ndarray,
     problem: Problem[np.ndarray],
     agent_agent_constraint_tolerance: float,
     agent_obstacle_constraint_tolerance: float,
     velocity_constraint_tolerance: float,
 ):
-    """Computes an unbiased estimate of trajectory likelihoods."""
+    """Computes an unbiased estimate of trajectory unscaled probabilities."""
     constraint_result = compute_constraint_residuals(problem, trajectory_batch)
     agent_agent_ok = ~(
         constraint_result.agent_agent_constraint_residuals
@@ -464,8 +469,8 @@ def evaluate_trajectory_likelihood(
     kinetic_energies = kinetic_energies - (
         kinetic_energies[ok].mean() if ok.any() else 0.0
     )
-    likelihoods = ok.astype(np.float32) * np.exp(-kinetic_energies)
-    return likelihoods
+    unscaled_probabilities = ok.astype(np.float32) * np.exp(-kinetic_energies)
+    return unscaled_probabilities
 
 
 def compute_score_mppi(
@@ -479,7 +484,7 @@ def compute_score_mppi(
 ):
     trajectory_batch = trajectory[np.newaxis, ...].repeat(repeats=num_samples, axis=0)  # ty:ignore[no-matching-overload]
     noise = np.random.normal(size=trajectory_batch.shape)
-    trajectory_weights = evaluate_trajectory_likelihood(
+    trajectory_weights = evaluate_trajectory_unscaled_probabilities(
         trajectory_batch + noise * sigma,
         problem,
         agent_agent_constraint_tolerance,
@@ -491,4 +496,138 @@ def compute_score_mppi(
         / (np.sum(trajectory_weights) + 1e-8)
         / (sigma**2)
     )
+    return score
+
+
+@dataclass
+class MPPITrajectoryEvaluation:
+    """
+    Keys correspond to different factors that affect the overall unscaled probability. Each array
+    has shape (b, t, a), where b is the number of noise samples, t is the number of time steps, and
+    a is the number of agents, representing the unscaled probabilities per time step and agent.
+    Separating into these factors allows for more detailed analysis of which components are contributing
+    to the overall likelihood.
+    """
+
+    agent_agent: np.ndarray
+    agent_obstacle: np.ndarray
+    velocity: np.ndarray
+    kinetic_energy: np.ndarray
+    overall: np.ndarray
+
+
+def evaluate_trajectory_unscaled_probabilities_factorized(
+    trajectory: np.ndarray,
+    noise_batch: np.ndarray,
+    problem: Problem[np.ndarray],
+    agent_agent_constraint_tolerance: float,
+    agent_obstacle_constraint_tolerance: float,
+    velocity_constraint_tolerance: float,
+    use_velocity_baseline: bool = False,
+) -> MPPITrajectoryEvaluation:
+    """
+    Estimates trajectory likelihoods by adding noise to each coordinate separately.
+    The constraint residuals for noisy trajectories are first computed. These preserve
+    temporal information about when the constraints were violated. Then, relative
+    kinetic energy likelihoods for each point are computed according to the resulting
+    delta. The normalization factor cancels out, which is why the delta alone is sufficient.
+    """
+
+    b = noise_batch.shape[0]
+    t = trajectory.shape[0]
+    a = trajectory.shape[1]
+    result = {
+        "agent_agent": np.ones((b, t, a), dtype=np.float32),
+        "agent_obstacle": np.ones((b, t, a), dtype=np.float32),
+        "velocity": np.ones((b, t, a), dtype=np.float32),
+        "kinetic_energy": np.ones((b, t, a), dtype=np.float32),
+        "overall": np.ones((b, t, a), dtype=np.float32),
+    }
+
+    # (b, t, a, a)
+    agent_agent_ok = (
+        compute_agent_agent_constraint_residuals(problem, noise_batch + trajectory)
+        <= agent_agent_constraint_tolerance
+    )
+    # (b, t, a, o)
+    agent_obstacle_ok = (
+        compute_agent_obstacle_constraint_residuals(problem, noise_batch + trajectory)
+        <= agent_obstacle_constraint_tolerance
+    )
+
+    velocity_squared_baseline = ((trajectory[1:] - trajectory[:-1]) ** 2).sum(axis=-1)
+    # Same endpoint, but adding noise to starting point. The start point doesn't matter because it's fixed
+    # to the agent's current position.
+    velocity_squared_per_deviation = (
+        ((trajectory[1:] + noise_batch[:, 1:]) - trajectory[:-1]) ** 2
+    ).sum(axis=-1)
+
+    # (b, t, a)
+    velocity_constraint_residual_baseline = (
+        np.sqrt(velocity_squared_baseline) - problem.agent_max_speeds
+    )
+    velocity_constraint_residual_per_deviation = (
+        np.sqrt(velocity_squared_per_deviation) - problem.agent_max_speeds
+    )
+
+    result["agent_agent"] *= agent_agent_ok.all(axis=-1).astype(np.float32)
+    result["agent_obstacle"] *= agent_obstacle_ok.all(axis=-1).astype(np.float32)
+
+    if use_velocity_baseline:
+        velocity_ok = (
+            velocity_constraint_residual_per_deviation < velocity_constraint_tolerance
+        ) < (velocity_constraint_residual_baseline < velocity_constraint_tolerance)
+    else:
+        velocity_ok = (
+            velocity_constraint_residual_per_deviation < velocity_constraint_tolerance
+        )
+
+    # Only apply velocity constraint effects to points after the starting point.
+    result["velocity"][:, 1:] *= velocity_ok.astype(np.float32)
+
+    # Evaluate kinetic energy change.
+    delta_kinetic_energy_per_deviation = 0.5 * (
+        velocity_squared_per_deviation - velocity_squared_baseline
+    )
+    delta_kinetic_energy_per_deviation -= np.mean(delta_kinetic_energy_per_deviation)
+    result["kinetic_energy"][:, 1:] *= np.exp(-delta_kinetic_energy_per_deviation)
+
+    return MPPITrajectoryEvaluation(
+        agent_agent=result["agent_agent"],
+        agent_obstacle=result["agent_obstacle"],
+        velocity=result["velocity"],
+        kinetic_energy=result["kinetic_energy"],
+        overall=(
+            result["agent_agent"]
+            * result["agent_obstacle"]
+            * result["velocity"]
+            * result["kinetic_energy"]
+        ),
+    )
+
+
+def compute_score_mppi_factorized(
+    trajectory: np.ndarray,
+    problem: Problem[np.ndarray],
+    sigma: float,
+    num_samples: int,
+    agent_agent_constraint_tolerance: float,
+    agent_obstacle_constraint_tolerance: float,
+    velocity_constraint_tolerance: float,
+):
+    trajectory_batch = trajectory[np.newaxis, ...].repeat(repeats=num_samples, axis=0)  # ty:ignore[no-matching-overload]
+    noise = np.random.normal(size=trajectory_batch.shape) * sigma
+    evaluation = evaluate_trajectory_unscaled_probabilities_factorized(
+        trajectory,
+        noise,
+        problem,
+        agent_agent_constraint_tolerance,
+        agent_obstacle_constraint_tolerance,
+        velocity_constraint_tolerance,
+    )
+    eps = 1e-8
+    weights = evaluation.overall / (
+        np.sum(evaluation.overall, axis=1, keepdims=True) + eps
+    )
+    score = 1 / sigma**2 * np.sum(noise * weights[:, :, :, None], axis=0)
     return score
