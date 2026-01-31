@@ -124,13 +124,12 @@ DEFAULT_SCHEDULE_UNFACTORIZED_MPPI = [
     ),
     ScheduleEntry(
         sigma=0.1,
-        step_size=0.1,
+        step_size=0.02,
         num_steps=100,
         score_fn_kwargs=dict(
-            agent_agent_constraint_tolerance=1e-1,
-            # Tighten the agent-obstacle constraint.
+            agent_agent_constraint_tolerance=0.02,
             agent_obstacle_constraint_tolerance=0.02,
-            velocity_constraint_tolerance=1e-1,
+            velocity_constraint_tolerance=0.02,
         ),
     ),
     ScheduleEntry(
