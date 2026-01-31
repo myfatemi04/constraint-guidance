@@ -63,22 +63,80 @@ class ScheduleEntry:
     num_steps: int = 60
     """ The number of steps to operate under these parameters. """
 
-    num_integral: int = 20
-    """ The number of integration points to use when computing the nonpenetration score functions. """
+    score_fn_kwargs: dict | None = None
+    """ Any keyword arguments to pass to the score function. """
 
 
 class ScoreComputationMethod(str, enum.Enum):
     APPROXIMATE_V0 = "approximate_v0"
-    MPPI = "mppi"
+    UNFACTORIZED_MPPI = "unfactorized_mppi"
 
 
 DEFAULT_SCHEDULE = [
-    ScheduleEntry(sigma=1.0, step_size=0.5, num_steps=60, kinetic_weight=50),
-    ScheduleEntry(sigma=0.1, step_size=0.5, num_steps=60, kinetic_weight=50),
-    ScheduleEntry(sigma=0.01, step_size=0.5, num_steps=60, kinetic_weight=50),
-    ScheduleEntry(sigma=0.01, step_size=0.5, num_steps=60, kinetic_weight=10),
-    ScheduleEntry(sigma=0.001, step_size=0.5, num_steps=60, kinetic_weight=1),
-    ScheduleEntry(sigma=0.001, step_size=0.5, num_steps=60, kinetic_weight=0.2),
+    ScheduleEntry(
+        sigma=1.0, step_size=0.5, num_steps=60, score_fn_kwargs=dict(kinetic_weight=50)
+    ),
+    ScheduleEntry(
+        sigma=0.1, step_size=0.5, num_steps=60, score_fn_kwargs=dict(kinetic_weight=50)
+    ),
+    ScheduleEntry(
+        sigma=0.01, step_size=0.5, num_steps=60, score_fn_kwargs=dict(kinetic_weight=50)
+    ),
+    ScheduleEntry(
+        sigma=0.01, step_size=0.5, num_steps=60, score_fn_kwargs=dict(kinetic_weight=10)
+    ),
+    ScheduleEntry(
+        sigma=0.001, step_size=0.5, num_steps=60, score_fn_kwargs=dict(kinetic_weight=1)
+    ),
+    ScheduleEntry(
+        sigma=0.001,
+        step_size=0.5,
+        num_steps=60,
+        score_fn_kwargs=dict(kinetic_weight=0.2),
+    ),
+]
+
+DEFAULT_SCHEDULE_UNFACTORIZED_MPPI = [
+    ScheduleEntry(
+        sigma=1.0,
+        step_size=0.5,
+        num_steps=100,
+        score_fn_kwargs=dict(
+            agent_agent_constraint_tolerance=1.0,
+            agent_obstacle_constraint_tolerance=1.0,
+            velocity_constraint_tolerance=1.0,
+        ),
+    ),
+    ScheduleEntry(
+        sigma=0.5,
+        step_size=0.5,
+        num_steps=100,
+        score_fn_kwargs=dict(
+            agent_agent_constraint_tolerance=0.5,
+            agent_obstacle_constraint_tolerance=0.5,
+            velocity_constraint_tolerance=0.5,
+        ),
+    ),
+    ScheduleEntry(
+        sigma=0.1,
+        step_size=0.5,
+        num_steps=100,
+        score_fn_kwargs=dict(
+            agent_agent_constraint_tolerance=0.1,
+            agent_obstacle_constraint_tolerance=0.1,
+            velocity_constraint_tolerance=0.1,
+        ),
+    ),
+    ScheduleEntry(
+        sigma=0.01,
+        step_size=0.5,
+        num_steps=100,
+        score_fn_kwargs=dict(
+            agent_agent_constraint_tolerance=0.01,
+            agent_obstacle_constraint_tolerance=0.01,
+            velocity_constraint_tolerance=0.01,
+        ),
+    ),
 ]
 
 
@@ -119,19 +177,16 @@ def solve(
                         sigma=schedule_entry.sigma,
                         problem=problem,
                         include_obstacles=True,
-                        n_integral=schedule_entry.num_integral,
-                        kinetic_weight=schedule_entry.kinetic_weight,
                         magnitude_clip=optimizer_options.magnitude_clip,
+                        **(schedule_entry.score_fn_kwargs or {}),
                     )
-                case ScoreComputationMethod.MPPI:
+                case ScoreComputationMethod.UNFACTORIZED_MPPI:
                     score = compute_score_mppi(
                         trajectory,
                         problem=problem,
                         sigma=schedule_entry.sigma,
                         num_samples=100,
-                        agent_agent_constraint_tolerance=1e-3,
-                        agent_obstacle_constraint_tolerance=1e-3,
-                        velocity_constraint_tolerance=1e-3,
+                        **(schedule_entry.score_fn_kwargs or {}),
                     )
             beta1_t *= optimizer_options.beta1
             beta2_t *= optimizer_options.beta2

@@ -10,6 +10,7 @@ from loguru import logger
 from ael.problem import Problem
 from ael.solve import (
     DEFAULT_SCHEDULE,
+    DEFAULT_SCHEDULE_UNFACTORIZED_MPPI,
     OptimizerOptions,
     Result,
     ScheduleEntry,
@@ -41,7 +42,9 @@ class MainArgs:
     save_dir: str = "./results/demo_{date}T{time}"
     """ Path to a directory in which to save results. Allows formatting with `date` and `time` variables, which are formatted as YYYY-mm-dd and HH-MM-SS, respectively. """
 
-    score_computation_method: ScoreComputationMethod = ScoreComputationMethod.MPPI
+    score_computation_method: ScoreComputationMethod = (
+        ScoreComputationMethod.UNFACTORIZED_MPPI
+    )
 
 
 def store_result(
@@ -155,17 +158,23 @@ def main(args: MainArgs):
     else:
         problem = Problem.from_json(problems[0], type="numpy")
 
-    if args.schedule == "default":
-        schedule = DEFAULT_SCHEDULE
-    else:
-        schedule_path = Path(args.schedule)
-        if not schedule_path.exists():
-            raise ValueError(f"Schedule path {schedule_path} does not exist.")
+    match args.schedule:
+        case "default":
+            schedule = (
+                DEFAULT_SCHEDULE
+                if args.score_computation_method
+                == ScoreComputationMethod.APPROXIMATE_V0
+                else DEFAULT_SCHEDULE_UNFACTORIZED_MPPI
+            )
+        case _:
+            schedule_path = Path(args.schedule)
+            if not schedule_path.exists():
+                raise ValueError(f"Schedule path {schedule_path} does not exist.")
 
-        with open(schedule_path) as f:
-            schedule_json = json.load(f)
+            with open(schedule_path) as f:
+                schedule_json = json.load(f)
 
-        schedule = [ScheduleEntry(**entry_dict) for entry_dict in schedule_json]
+            schedule = [ScheduleEntry(**entry_dict) for entry_dict in schedule_json]
 
     result = solve(
         problem=problem,

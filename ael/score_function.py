@@ -479,14 +479,13 @@ def compute_score_mppi(
 ):
     trajectory_batch = trajectory[np.newaxis, ...].repeat(repeats=num_samples, axis=0)  # ty:ignore[no-matching-overload]
     noise = np.random.normal(size=trajectory_batch.shape)
-    trajectory_likelihood_batch = evaluate_trajectory_likelihood(
+    trajectory_weights = evaluate_trajectory_likelihood(
         trajectory_batch + noise * sigma,
         problem,
         agent_agent_constraint_tolerance,
         agent_obstacle_constraint_tolerance,
         velocity_constraint_tolerance,
     )
-    trajectory_weights = np.exp(trajectory_likelihood_batch)
     score = (
         np.sum(noise * trajectory_weights[:, None, None, None], axis=0)
         / (np.sum(trajectory_weights) + 1e-8)
