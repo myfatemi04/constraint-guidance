@@ -579,20 +579,26 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
     result["agent_agent"] *= agent_agent_ok.all(axis=-1).astype(np.float32)
     result["agent_obstacle"] *= agent_obstacle_ok.all(axis=-1).astype(np.float32)
 
-    # if use_velocity_baseline:
-    #     velocity_ok_forward = (
-    #         velocity_constraint_residual_per_deviation_reverse
-    #         < velocity_constraint_tolerance
-    #     ) < (velocity_constraint_residual_baseline < velocity_constraint_tolerance)
-    # else:
-    velocity_ok_forward = (
+    velocity_ok_reverse = (
         velocity_constraint_residual_per_deviation_reverse
         < velocity_constraint_tolerance
     )
-    velocity_ok_reverse = (
+    velocity_ok_forward = (
         velocity_constraint_residual_per_deviation_forward
         < velocity_constraint_tolerance
     )
+    velocity_ok_baseline = (
+        velocity_constraint_residual_baseline < velocity_constraint_tolerance
+    )
+
+    if use_velocity_baseline:
+        # When using the 'baseline', don't disregard trajectories for which the original case was invalid.
+        velocity_ok_forward = velocity_ok_forward | (
+            ~velocity_ok_forward & ~velocity_ok_baseline
+        )
+        velocity_ok_reverse = velocity_ok_reverse | (
+            ~velocity_ok_reverse & ~velocity_ok_baseline
+        )
 
     # Only apply velocity constraint effects to points after the starting point.
     result["velocity"][:, 1:] *= velocity_ok_forward.astype(np.float32)
@@ -631,10 +637,10 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
         velocity=result["velocity"],
         kinetic_energy=result["kinetic_energy"],
         overall=(
-            result["agent_agent"]
-            * result["agent_obstacle"]
-            * result["velocity"]
-            * result["kinetic_energy"]
+            result["kinetic_energy"]
+            # * result["agent_agent"]
+            # * result["agent_obstacle"]
+            # * result["velocity"]
         ),
     )
 
@@ -660,7 +666,8 @@ def compute_score_mppi_factorized(
     eps = 1e-8
     weights = evaluation.overall / (
         # divide over batch dimension
-        np.sum(evaluation.overall, axis=0, keepdims=True) + eps
+        np.sum(evaluation.overall, axis=0) + eps
     )
-    score = 1 / sigma**2 * np.sum(noise * weights[:, :, :, None], axis=0)
+    # score = 1 / sigma**2 * np.sum(noise * weights[:, :, :, None], axis=0)
+    score = np.sum(noise * weights[:, :, :, None], axis=0)
     return score

@@ -10,7 +10,10 @@ import numpy as np
 from matplotlib.patches import Circle
 
 from ael.problem import Problem
-from ael.score_function import evaluate_trajectory_unscaled_probabilities_factorized
+from ael.score_function import (
+    compute_score_mppi_factorized,
+    evaluate_trajectory_unscaled_probabilities_factorized,
+)
 from ael.visualize import visualize
 
 
@@ -366,29 +369,40 @@ def debug_sanity_kinetic_energy():
         obstacle_radii=np.empty((0,)),
         agent_max_speeds=np.array([1.0]),
     )
+
     trajectory = np.linspace(
         problem.agent_start_positions,
         problem.agent_end_positions,
         num=32,
         axis=0,
     ) + 10 * np.random.randn(32, 1, 2)
+
     num_noise_samples = 10
     sigma = 0.1
+
+    method = 0
+
     for step in range(2000):
-        noise_batch = np.random.randn(num_noise_samples, *trajectory.shape) * sigma
-        evaluation = evaluate_trajectory_unscaled_probabilities_factorized(
-            trajectory,
-            noise_batch,
-            problem,
-            agent_agent_constraint_tolerance=0.0,
-            agent_obstacle_constraint_tolerance=0.0,
-            velocity_constraint_tolerance=0.0,
-        )
-        weights = evaluation.kinetic_energy
-        weights = weights / weights.sum(axis=0)
-        # (b, t, a, 2) * (b, t, a, 1) -> (b, t, a, 2)
-        noise_weighted = (noise_batch * weights[:, :, :, np.newaxis]).sum(axis=0)
-        trajectory += noise_weighted
+        if method == 0:
+            score = compute_score_mppi_factorized(
+                trajectory, problem, sigma, num_noise_samples, np.inf, np.inf, 0.0
+            )
+        else:
+            noise_batch = np.random.randn(num_noise_samples, *trajectory.shape) * sigma
+            evaluation = evaluate_trajectory_unscaled_probabilities_factorized(
+                trajectory,
+                noise_batch,
+                problem,
+                agent_agent_constraint_tolerance=0.0,
+                agent_obstacle_constraint_tolerance=0.0,
+                velocity_constraint_tolerance=0.0,
+            )
+            weights = evaluation.kinetic_energy
+            weights = weights / weights.sum(axis=0)
+            # (b, t, a, 2) * (b, t, a, 1) -> (b, t, a, 2)
+            score = (noise_batch * weights[:, :, :, np.newaxis]).sum(axis=0)
+
+        trajectory += score
 
         trajectory[0] = problem.agent_start_positions
         trajectory[-1] = problem.agent_end_positions
