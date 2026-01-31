@@ -590,6 +590,9 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
         velocity_squared_per_deviation - velocity_squared_baseline
     )
     delta_kinetic_energy_per_deviation -= np.mean(delta_kinetic_energy_per_deviation)
+    delta_kinetic_energy_per_deviation /= (
+        np.std(delta_kinetic_energy_per_deviation) + 1e-8
+    )
     result["kinetic_energy"][:, 1:] *= np.exp(-delta_kinetic_energy_per_deviation)
 
     return MPPITrajectoryEvaluation(

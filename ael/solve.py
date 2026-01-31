@@ -37,7 +37,7 @@ class Result:
 
 @dataclass
 class OptimizerOptions:
-    optimization: Literal["adam", "sgd"] = "adam"
+    kind: Literal["adam", "sgd"] = "adam"
     """ The optimization algorithm to use. Adam is strongly recommended for stability."""
 
     beta1: float = 0.9
@@ -104,7 +104,7 @@ DEFAULT_SCHEDULE = [
 DEFAULT_SCHEDULE_UNFACTORIZED_MPPI = [
     ScheduleEntry(
         sigma=1.0,
-        step_size=0.5,
+        step_size=1.0,
         num_steps=100,
         score_fn_kwargs=dict(
             agent_agent_constraint_tolerance=1.0,
@@ -114,7 +114,7 @@ DEFAULT_SCHEDULE_UNFACTORIZED_MPPI = [
     ),
     ScheduleEntry(
         sigma=0.5,
-        step_size=0.5,
+        step_size=1.0,
         num_steps=100,
         score_fn_kwargs=dict(
             agent_agent_constraint_tolerance=0.5,
@@ -124,7 +124,7 @@ DEFAULT_SCHEDULE_UNFACTORIZED_MPPI = [
     ),
     ScheduleEntry(
         sigma=0.1,
-        step_size=0.5,
+        step_size=1.0,
         num_steps=100,
         score_fn_kwargs=dict(
             agent_agent_constraint_tolerance=0.1,
@@ -134,7 +134,7 @@ DEFAULT_SCHEDULE_UNFACTORIZED_MPPI = [
     ),
     ScheduleEntry(
         sigma=0.01,
-        step_size=0.5,
+        step_size=1.0,
         num_steps=100,
         score_fn_kwargs=dict(
             agent_agent_constraint_tolerance=0.01,
@@ -153,6 +153,14 @@ def solve(
     initial_trajectory: np.ndarray | None = None,
     identifier: str | None = None,
 ) -> Result:
+    if score_computation_method in [
+        ScoreComputationMethod.UNFACTORIZED_MPPI,
+        ScoreComputationMethod.FACTORIZED_MPPI,
+    ]:
+        assert optimizer_options.kind == "sgd" and all(
+            s.step_size == 1 for s in schedule
+        ), "MPPI computations require SGD with a step size of 1 for true equivalence."
+
     # TODO: Initialize from prior distribution based on energy.
     start_positions = problem.agent_start_positions
     end_positions = problem.agent_end_positions
@@ -204,7 +212,7 @@ def solve(
             beta1_t *= optimizer_options.beta1
             beta2_t *= optimizer_options.beta2
 
-            match optimizer_options.optimization:
+            match optimizer_options.kind:
                 case "sgd":
                     trajectory += schedule_entry.step_size * score
                 case "adam":
