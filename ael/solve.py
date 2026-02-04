@@ -103,45 +103,16 @@ DEFAULT_SCHEDULE = [
 
 DEFAULT_SCHEDULE_UNFACTORIZED_MPPI = [
     ScheduleEntry(
-        sigma=0.25,
-        step_size=0.1,
-        num_steps=200,
-        score_fn_kwargs=dict(
-            agent_agent_constraint_tolerance=0.25,
-            agent_obstacle_constraint_tolerance=0.25,
-            velocity_constraint_tolerance=0.25,
-        ),
-    ),
-    ScheduleEntry(
-        sigma=0.1,
-        step_size=0.1,
+        sigma=sigma,
+        step_size=1.0,
         num_steps=100,
         score_fn_kwargs=dict(
-            agent_agent_constraint_tolerance=1e-1,
-            agent_obstacle_constraint_tolerance=1e-1,
-            velocity_constraint_tolerance=1e-1,
+            agent_agent_constraint_tolerance=0.0,
+            agent_obstacle_constraint_tolerance=0.0,
+            velocity_constraint_tolerance=0.0,
         ),
-    ),
-    ScheduleEntry(
-        sigma=0.1,
-        step_size=0.02,
-        num_steps=100,
-        score_fn_kwargs=dict(
-            agent_agent_constraint_tolerance=0.02,
-            agent_obstacle_constraint_tolerance=0.02,
-            velocity_constraint_tolerance=0.02,
-        ),
-    ),
-    ScheduleEntry(
-        sigma=0.01,
-        step_size=0.1,
-        num_steps=200,
-        score_fn_kwargs=dict(
-            agent_agent_constraint_tolerance=1e-2,
-            agent_obstacle_constraint_tolerance=1e-2,
-            velocity_constraint_tolerance=1e-2,
-        ),
-    ),
+    )
+    for sigma in [1.0, 0.5, 0.25, 0.1, 0.05, 0.025, 0.01]
 ]
 
 
