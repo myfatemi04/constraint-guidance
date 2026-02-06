@@ -675,11 +675,17 @@ def compute_score_mppi_factorized(
     return score
 
 
-def compute_feasibility_score_numerator(xy, sigma, surfaces, n_points=10):
+def compute_feasibility_score_numerator(
+    xy: np.ndarray, sigma: float, surfaces: np.ndarray, n_points: int = 10
+) -> tuple[np.ndarray, np.ndarray]:
     """
     An improved approach for computing the score using line integrals.
 
-    Constraint surfaces: A list of (center_x, center_y, radius, theta1, theta2, sign) tuples.
+    Args:
+    - xy: (N, 2) array of points at which to evaluate the score.
+    - sigma: stddev for Gaussian.
+    - surfaces: (S, 6) array of (center_x, center_y, radius, theta1, theta2, sign).
+
     The sign indicates whether it is an "exclusion" or "inclusion" constraint. These constraint
     surfaces can be created by computing the intersection points between each of the obstacles.
     Here, it's assumed that the constraint surfaces are piecewise arcs, because the feasible set
@@ -708,17 +714,19 @@ def compute_feasibility_score_numerator(xy, sigma, surfaces, n_points=10):
     ds = dtheta * radius
 
     # (N, T, S) <- (:, T, S) - (N, :, :). N is the number of points at which the score is being evaluated.
-    delta_x = x[np.newaxis, :, :] - xy[0][:, np.newaxis, np.newaxis]
-    delta_y = y[np.newaxis, :, :] - xy[1][:, np.newaxis, np.newaxis]
-    delta = delta_x**2 + delta_y**2
-    delta_min = delta.min(axis=-1).min(axis=-1)
-    delta_adjusted = delta - delta_min[:, np.newaxis, np.newaxis]
-    gaussian_pdf = np.exp(-0.5 * delta_adjusted / (sigma**2)) / (2 * np.pi * sigma**2)
+    delta_x = x[np.newaxis, :, :] - xy[:, 0, np.newaxis, np.newaxis]
+    delta_y = y[np.newaxis, :, :] - xy[:, 1, np.newaxis, np.newaxis]
+    exp_arg = -0.5 * (delta_x**2 + delta_y**2) / (sigma**2)
+    exp_arg_max = 0 * exp_arg.max(axis=-1).max(axis=-1)
+    exp_arg_adjusted = exp_arg - exp_arg_max[:, np.newaxis, np.newaxis]
+
+    gaussian_pdf = np.exp(exp_arg_adjusted) / (2 * np.pi * sigma**2)
 
     # (N, T, S) <- (S,) * (N, T, S) * (T, S) * (T, S)
     integrand_x = sign * gaussian_pdf * ds * n_x
     integrand_y = sign * gaussian_pdf * ds * n_y
 
+    # (N,) <- sum over T and S of (N, T, S)
     integral_x = np.sum(np.sum(integrand_x, axis=-1), axis=-1)
     integral_y = np.sum(np.sum(integrand_y, axis=-1), axis=-1)
 
@@ -730,10 +738,12 @@ def compute_feasibility_score_numerator(xy, sigma, surfaces, n_points=10):
     informative.
     """
 
-    return (integral_x, integral_y, delta_min)
+    return np.stack([integral_x, integral_y], axis=-1), exp_arg_max
 
 
-def compute_feasibility_score_denominator(xy, sigma, disks, n_samples=100):
+def compute_feasibility_score_denominator(
+    xy: np.ndarray, sigma: float, disks: np.ndarray, n_samples: int = 100
+):
     """
     Computes feasibility by sampling around the current point and checking whether the results
     lie inside the disks or not. The disks are (center_x, center_y, radius, sign) tuples. There
@@ -761,6 +771,7 @@ def compute_feasibility_score_denominator(xy, sigma, disks, n_samples=100):
     # (B, N, S) <- (B, N, S) compared to (S)
     inside = xy_distances <= radius
     outside = xy_distances >= radius
+
     # (B, N) <- all(axis=-1) of (B, N, S) <- (B, N, S) & (S)
     ok = np.all(outside & (sign == 1) | inside & (sign == -1), axis=-1)
     # (N,) <- mean(axis=0) of (B, N)
