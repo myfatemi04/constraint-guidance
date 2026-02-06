@@ -673,3 +673,97 @@ def compute_score_mppi_factorized(
     # score = 1 / sigma**2 * np.sum(noise * weights[:, :, :, None], axis=0)
     score = np.sum(noise * weights[:, :, :, None], axis=0)
     return score
+
+
+def compute_feasibility_score_numerator(xy, sigma, surfaces, n_points=10):
+    """
+    An improved approach for computing the score using line integrals.
+
+    Constraint surfaces: A list of (center_x, center_y, radius, theta1, theta2, sign) tuples.
+    The sign indicates whether it is an "exclusion" or "inclusion" constraint. These constraint
+    surfaces can be created by computing the intersection points between each of the obstacles.
+    Here, it's assumed that the constraint surfaces are piecewise arcs, because the feasible set
+    is created through the intersection of disks, which have boundaries which are arcs. The
+    denominator is estimated by sampling several points around the current location and checking
+    for feasibility. For now, if it's found to be too low, the numerator will be normalized to
+    have a magnitude of 1.
+    """
+
+    # (S,). S is the number of surfaces.
+    center_x = surfaces[:, 0]
+    center_y = surfaces[:, 1]
+    radius = surfaces[:, 2]
+    theta1 = surfaces[:, 3]
+    theta2 = surfaces[:, 4]
+    sign = surfaces[:, 5]
+
+    # (T, S). T is the number of points sampled along each surface.
+    theta = np.linspace(theta1, theta2, num=n_points, endpoint=False)
+    dtheta = theta[1] - theta[0]
+    n_x = np.cos(theta)
+    n_y = np.sin(theta)
+    x = center_x + radius * n_x
+    y = center_y + radius * n_y
+    # (T - 1, S) - Compute ds for line integral.
+    ds = dtheta * radius
+
+    # (N, T, S) <- (:, T, S) - (N, :, :). N is the number of points at which the score is being evaluated.
+    delta_x = x[np.newaxis, :, :] - xy[0][:, np.newaxis, np.newaxis]
+    delta_y = y[np.newaxis, :, :] - xy[1][:, np.newaxis, np.newaxis]
+    delta = delta_x**2 + delta_y**2
+    delta_min = delta.min(axis=-1).min(axis=-1)
+    delta_adjusted = delta - delta_min[:, np.newaxis, np.newaxis]
+    gaussian_pdf = np.exp(-0.5 * delta_adjusted / (sigma**2)) / (2 * np.pi * sigma**2)
+
+    # (N, T, S) <- (S,) * (N, T, S) * (T, S) * (T, S)
+    integrand_x = sign * gaussian_pdf * ds * n_x
+    integrand_y = sign * gaussian_pdf * ds * n_y
+
+    integral_x = np.sum(np.sum(integrand_x, axis=-1), axis=-1)
+    integral_y = np.sum(np.sum(integrand_y, axis=-1), axis=-1)
+
+    """
+    delta_min can be used to compare with the denominator.
+    If the denominator is large, the numerator can essentially be discarded.
+    If the denominator is small, the delta_min can be discarded and the numerator
+    can be normalized to have a magnitude of 1, since the direction is still
+    informative.
+    """
+
+    return (integral_x, integral_y, delta_min)
+
+
+def compute_feasibility_score_denominator(xy, sigma, disks, n_samples=100):
+    """
+    Computes feasibility by sampling around the current point and checking whether the results
+    lie inside the disks or not. The disks are (center_x, center_y, radius, sign) tuples. There
+    is no theta 1 or theta 2 in this case.
+
+    xy: (N, 2) - N is the number of points for which the score is being evaluated.
+    """
+
+    # (S,). S is the number of disks.
+    center_x = disks[:, 0]
+    center_y = disks[:, 1]
+    radius = disks[:, 2]
+    sign = disks[:, 3]
+
+    # (B, N, 2). B is the number of samples, N is the number of points, 2 is for x and y.
+    xy_noise = (
+        xy[np.newaxis, :, :] + np.random.normal(size=(n_samples, *xy.shape)) * sigma
+    )
+    # (B, N, S) <- (B, N, :) - (S)
+    xy_distances = np.sqrt(
+        (xy_noise[:, :, np.newaxis, 0] - center_x) ** 2
+        + (xy_noise[:, :, np.newaxis, 1] - center_y) ** 2
+    )
+
+    # (B, N, S) <- (B, N, S) compared to (S)
+    inside = xy_distances <= radius
+    outside = xy_distances >= radius
+    # (B, N) <- all(axis=-1) of (B, N, S) <- (B, N, S) & (S)
+    ok = np.all(outside & (sign == 1) | inside & (sign == -1), axis=-1)
+    # (N,) <- mean(axis=0) of (B, N)
+    ok_fraction = ok.mean(axis=0)
+
+    return ok_fraction
