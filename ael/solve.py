@@ -13,9 +13,11 @@ from ael.constraint_evaluation import (
     ConstraintSatisfaction,
     compute_constraint_residuals,
 )
+from ael.geometry import compute_obstacle_boundaries
 from ael.problem import Problem
 from ael.score_function import (
     compute_score,
+    compute_score_from_boundary_integrals,
     compute_score_mppi_factorized,
     compute_score_mppi_unfactorized,
 )
@@ -75,9 +77,10 @@ class ScoreComputationMethod(str, enum.Enum):
     APPROXIMATE_V0 = "approximate_v0"
     UNFACTORIZED_MPPI = "unfactorized_mppi"
     FACTORIZED_MPPI = "factorized_mppi"
+    BOUNDARY_INTEGRALS = "boundary_integrals"
 
 
-DEFAULT_SCHEDULE = [
+DEFAULT_SCHEDULE_APPROXIMATE_V0 = [
     ScheduleEntry(
         sigma=1.0, step_size=0.5, num_steps=60, score_fn_kwargs=dict(kinetic_weight=50)
     ),
@@ -101,7 +104,7 @@ DEFAULT_SCHEDULE = [
     ),
 ]
 
-DEFAULT_SCHEDULE_UNFACTORIZED_MPPI = [
+DEFAULT_SCHEDULE_MPPI = [
     ScheduleEntry(
         sigma=sigma,
         step_size=1.0,
@@ -115,15 +118,31 @@ DEFAULT_SCHEDULE_UNFACTORIZED_MPPI = [
     for sigma in [1.0, 0.5, 0.25, 0.1, 0.05, 0.025, 0.01]
 ]
 
+DEFAULT_SCHEDULE_BOUNDARY_INTEGRALS = [
+    ScheduleEntry(sigma=sigma, step_size=0.2, num_steps=5)
+    for sigma in [1.0, 0.5, 0.25, 0.1, 0.05, 0.025, 0.01]
+]
+
+
+DEFAULT_SCHEDULES: dict[ScoreComputationMethod, list[ScheduleEntry]] = {
+    ScoreComputationMethod.APPROXIMATE_V0: DEFAULT_SCHEDULE_APPROXIMATE_V0,
+    ScoreComputationMethod.UNFACTORIZED_MPPI: DEFAULT_SCHEDULE_MPPI,
+    ScoreComputationMethod.FACTORIZED_MPPI: DEFAULT_SCHEDULE_MPPI,
+    ScoreComputationMethod.BOUNDARY_INTEGRALS: DEFAULT_SCHEDULE_BOUNDARY_INTEGRALS,
+}
+
 
 def solve(
     problem: Problem,
     score_computation_method: ScoreComputationMethod,
     optimizer_options: OptimizerOptions = OptimizerOptions(),
-    schedule: list[ScheduleEntry] = DEFAULT_SCHEDULE,
+    schedule: list[ScheduleEntry] | None = None,
     initial_trajectory: np.ndarray | None = None,
     identifier: str | None = None,
 ) -> Result:
+    if schedule is None:
+        schedule = DEFAULT_SCHEDULES[score_computation_method]
+
     if score_computation_method in [
         ScoreComputationMethod.UNFACTORIZED_MPPI,
         ScoreComputationMethod.FACTORIZED_MPPI,
@@ -149,6 +168,8 @@ def solve(
     score_v: np.ndarray = np.zeros_like(trajectory)
     beta1_t = 1.0
     beta2_t = 1.0
+
+    obstacle_boundaries = compute_obstacle_boundaries(problem)
 
     trajectories = []
 
@@ -182,6 +203,15 @@ def solve(
                         num_samples=100,
                         **(schedule_entry.score_fn_kwargs or {}),
                     )
+                case ScoreComputationMethod.BOUNDARY_INTEGRALS:
+                    score = compute_score_from_boundary_integrals(
+                        trajectory,
+                        problem=problem,
+                        sigma=schedule_entry.sigma,
+                        obstacle_boundaries=obstacle_boundaries,
+                        **(schedule_entry.score_fn_kwargs or {}),
+                    )
+
             beta1_t *= optimizer_options.beta1
             beta2_t *= optimizer_options.beta2
 

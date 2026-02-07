@@ -9,8 +9,7 @@ from loguru import logger
 
 from ael.problem import Problem
 from ael.solve import (
-    DEFAULT_SCHEDULE,
-    DEFAULT_SCHEDULE_UNFACTORIZED_MPPI,
+    DEFAULT_SCHEDULES,
     OptimizerOptions,
     Result,
     ScheduleEntry,
@@ -162,12 +161,7 @@ def main(args: MainArgs):
 
     match args.schedule:
         case "default":
-            schedule = (
-                DEFAULT_SCHEDULE
-                if args.score_computation_method
-                == ScoreComputationMethod.APPROXIMATE_V0
-                else DEFAULT_SCHEDULE_UNFACTORIZED_MPPI
-            )
+            schedule = DEFAULT_SCHEDULES[args.score_computation_method]
         case _:
             schedule_path = Path(args.schedule)
             if not schedule_path.exists():

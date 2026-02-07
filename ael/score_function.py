@@ -675,8 +675,21 @@ def compute_score_mppi_factorized(
     return score
 
 
+ARC_CENTER_X_DIM = 0
+ARC_CENTER_Y_DIM = 1
+ARC_RADIUS_DIM = 2
+ARC_THETA1_DIM = 3
+ARC_THETA2_DIM = 4
+ARC_SIGN_DIM = 5
+
+DISK_CENTER_X_DIM = 0
+DISK_CENTER_Y_DIM = 1
+DISK_RADIUS_DIM = 2
+DISK_SIGN_DIM = 3
+
+
 def compute_feasibility_score_numerator(
-    xy: np.ndarray, sigma: float, surfaces: np.ndarray, n_points: int = 10
+    xy: np.ndarray, sigma: float, boundaries: np.ndarray, n_points: int = 10
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     An improved approach for computing the score using line integrals.
@@ -684,7 +697,7 @@ def compute_feasibility_score_numerator(
     Args:
     - xy: (N, 2) array of points at which to evaluate the score.
     - sigma: stddev for Gaussian.
-    - surfaces: (S, 6) array of (center_x, center_y, radius, theta1, theta2, sign).
+    - surfaces: (N, S, 6) array of (center_x, center_y, radius, theta1, theta2, sign). The first dimension may be 1 if the surfaces are shared across all inputs.
 
     The sign indicates whether it is an "exclusion" or "inclusion" constraint. These constraint
     surfaces can be created by computing the intersection points between each of the obstacles.
@@ -695,36 +708,36 @@ def compute_feasibility_score_numerator(
     have a magnitude of 1.
     """
 
-    # (S,). S is the number of surfaces.
-    center_x = surfaces[:, 0]
-    center_y = surfaces[:, 1]
-    radius = surfaces[:, 2]
-    theta1 = surfaces[:, 3]
-    theta2 = surfaces[:, 4]
-    sign = surfaces[:, 5]
+    # (N, S). S is the number of surfaces.
+    center_x = boundaries[:, :, ARC_CENTER_X_DIM]
+    center_y = boundaries[:, :, ARC_CENTER_Y_DIM]
+    radius = boundaries[:, :, ARC_RADIUS_DIM]
+    theta1 = boundaries[:, :, ARC_THETA1_DIM]
+    theta2 = boundaries[:, :, ARC_THETA2_DIM]
+    sign = boundaries[:, :, ARC_SIGN_DIM]
 
-    # (T, S). T is the number of points sampled along each surface.
-    theta = np.linspace(theta1, theta2, num=n_points, endpoint=False)
+    # (N, T, S). T is the number of points sampled along each surface.
+    theta = np.linspace(theta1, theta2, num=n_points, endpoint=False, axis=1)
     dtheta = theta[1] - theta[0]
     n_x = np.cos(theta)
     n_y = np.sin(theta)
-    x = center_x + radius * n_x
-    y = center_y + radius * n_y
-    # (T - 1, S) - Compute ds for line integral.
-    ds = dtheta * radius
+    # (N, T, S) <- (N, :, S) + (N, :, S) * (N, T, S)
+    x = center_x[:, np.newaxis, :] + radius[:, np.newaxis, :] * n_x
+    y = center_y[:, np.newaxis, :] + radius[:, np.newaxis, :] * n_y
+    ds = dtheta * radius[:, np.newaxis]
 
-    # (N, T, S) <- (:, T, S) - (N, :, :). N is the number of points at which the score is being evaluated.
-    delta_x = x[np.newaxis, :, :] - xy[:, 0, np.newaxis, np.newaxis]
-    delta_y = y[np.newaxis, :, :] - xy[:, 1, np.newaxis, np.newaxis]
+    # (N, T, S) <- (N, T, S) - (N, :, :). N is the number of points at which the score is being evaluated.
+    delta_x = x - xy[:, 0, np.newaxis, np.newaxis]
+    delta_y = y - xy[:, 1, np.newaxis, np.newaxis]
     exp_arg = -0.5 * (delta_x**2 + delta_y**2) / (sigma**2)
-    exp_arg_max = 0 * exp_arg.max(axis=-1).max(axis=-1)
-    exp_arg_adjusted = exp_arg - exp_arg_max[:, np.newaxis, np.newaxis]
+    log_scaler = 0 * exp_arg.max(axis=-1).max(axis=-1)
+    exp_arg_adjusted = exp_arg - log_scaler[:, np.newaxis, np.newaxis]
 
     gaussian_pdf = np.exp(exp_arg_adjusted) / (2 * np.pi * sigma**2)
 
-    # (N, T, S) <- (S,) * (N, T, S) * (T, S) * (T, S)
-    integrand_x = sign * gaussian_pdf * ds * n_x
-    integrand_y = sign * gaussian_pdf * ds * n_y
+    # (N, T, S) <- (N, :, S) * (N, T, S) * (T, S) * (N, T, S)
+    integrand_x = sign[:, np.newaxis, :] * gaussian_pdf * ds * n_x
+    integrand_y = sign[:, np.newaxis, :] * gaussian_pdf * ds * n_y
 
     # (N,) <- sum over T and S of (N, T, S)
     integral_x = np.sum(np.sum(integrand_x, axis=-1), axis=-1)
@@ -738,7 +751,7 @@ def compute_feasibility_score_numerator(
     informative.
     """
 
-    return np.stack([integral_x, integral_y], axis=-1), exp_arg_max
+    return np.stack([integral_x, integral_y], axis=-1), log_scaler
 
 
 def compute_feasibility_score_denominator(
@@ -778,3 +791,96 @@ def compute_feasibility_score_denominator(
     ok_fraction = ok.mean(axis=0)
 
     return ok_fraction
+
+
+def compute_score_from_boundary_integrals(
+    trajectory: np.ndarray,
+    problem: Problem[np.ndarray],
+    sigma: float,
+    obstacle_boundaries: np.ndarray,
+):
+    score = np.zeros_like(trajectory)
+    for agent_i in range(trajectory.shape[1]):
+        num_other_agents = trajectory.shape[1] - 1
+
+        # Initialize surfaces with obstacles.
+        boundaries = np.zeros(
+            (trajectory.shape[0], obstacle_boundaries.shape[0] + num_other_agents, 6)
+        )
+        boundaries[:, : obstacle_boundaries.shape[0], :] = obstacle_boundaries
+        boundaries[:, : obstacle_boundaries.shape[0], ARC_RADIUS_DIM] += (
+            problem.agent_radii[agent_i]
+        )
+
+        # Initialize disks with obstacles. We must select indices carefully here because we're translating between two array formats.
+        disks = np.zeros(
+            (trajectory.shape[0], obstacle_boundaries.shape[0] + num_other_agents, 4)
+        )
+        disks[
+            :,
+            : obstacle_boundaries.shape[0],
+            [DISK_CENTER_X_DIM, DISK_CENTER_Y_DIM, DISK_RADIUS_DIM, DISK_SIGN_DIM],
+        ] = obstacle_boundaries[
+            :, [ARC_CENTER_X_DIM, ARC_CENTER_Y_DIM, ARC_RADIUS_DIM, ARC_SIGN_DIM]
+        ]
+        disks[:, : obstacle_boundaries.shape[0], DISK_RADIUS_DIM] += (
+            problem.agent_radii[agent_i]
+        )
+
+        # Include other agents as surfaces and disks.
+        for other_agent_i in range(trajectory.shape[1]):
+            index = obstacle_boundaries.shape[0]
+            for t in range(trajectory.shape[0]):
+                if other_agent_i == agent_i:
+                    continue
+
+                # Create new surfaces for agent-agent interactions.
+                # These are circles around the other agents with radius equal to the sum of the agent radii.
+                other_agent_trajectory = trajectory[:, other_agent_i, :]
+                for t in range(trajectory.shape[0]):
+                    r = (
+                        problem.agent_radii[agent_i]
+                        + problem.agent_radii[other_agent_i]
+                    )
+                    boundaries[t, index, ARC_CENTER_X_DIM] = other_agent_trajectory[
+                        t, 0
+                    ]
+                    boundaries[t, index, ARC_CENTER_Y_DIM] = other_agent_trajectory[
+                        t, 1
+                    ]
+                    boundaries[t, index, ARC_RADIUS_DIM] = r
+                    boundaries[t, index, ARC_THETA1_DIM] = 0
+                    boundaries[t, index, ARC_THETA2_DIM] = 2 * np.pi
+                    boundaries[t, index, ARC_SIGN_DIM] = 1.0
+
+                    disks[t, index, DISK_CENTER_X_DIM] = other_agent_trajectory[t, 0]
+                    disks[t, index, DISK_CENTER_Y_DIM] = other_agent_trajectory[t, 1]
+                    disks[t, index, DISK_RADIUS_DIM] = r
+                    disks[t, index, DISK_SIGN_DIM] = 1.0
+
+            index += 1
+
+        xy = trajectory[:, agent_i, :]
+
+        eps = 1e-8
+        numer, log_numer_scaler = compute_feasibility_score_numerator(
+            xy, sigma, boundaries
+        )
+        denom = compute_feasibility_score_denominator(xy, sigma, disks)
+        numer_scaler = np.maximum(np.exp(log_numer_scaler), eps)
+        obs_feas_score = (
+            numer * numer_scaler[:, np.newaxis] / (denom[:, np.newaxis] + eps)
+        )
+        obs_feas_score_mag = np.linalg.norm(obs_feas_score, axis=-1, keepdims=True)
+        obs_feas_score = obs_feas_score / np.maximum(obs_feas_score_mag, 1.0)
+
+        # Object feasibility component.
+        score[:, agent_i, :] = obs_feas_score
+
+        # Kinetic energy component.
+        mu = (score[2:, agent_i, :] + score[:-2, agent_i, :]) / 2
+        score[1:-1, agent_i, :] += (
+            1 / (1 + sigma**2) * (mu - trajectory[1:-1, agent_i, :])
+        )
+
+    return score

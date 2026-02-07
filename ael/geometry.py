@@ -68,7 +68,7 @@ def circle_circle_intersection_angles(A, B):
     return np.concatenate([angles_a, angles_b], axis=-1)
 
 
-def compute_obstacle_surfaces(problem: Problem[np.ndarray]) -> np.ndarray:
+def compute_obstacle_boundaries(problem: Problem[np.ndarray]) -> np.ndarray:
     """
     Returns a list of surfaces corresponding to the arcs of each obstacle circle that are not occluded by other obstacles. Each surface is represented as a tuple of (center_x, center_y, radius, theta_start, theta_end, sign), where sign is +1 for exclusion constraints and -1 for inclusion constraints.
     """
@@ -92,7 +92,9 @@ def compute_obstacle_surfaces(problem: Problem[np.ndarray]) -> np.ndarray:
     # (o, s)
     angles = [np.sort(a[~np.isnan(a)]) for a in angles]
     # (o, s, 2) corresponding to start and end thetas for each surface.
-    spans = [np.stack([a, np.array([*a[1:], a[:1] + 2 * np.pi])]) for a in angles]
+    spans = [
+        np.stack([a, np.array([*a[1:], a[0] + 2 * np.pi])], axis=-1) for a in angles
+    ]
     # Compute midpoints of each span. These are used to identify the feasibility of each surface by checking the midpoint against other obstacles.
     midpoint_thetas = [(s[:, 0] + s[:, 1]) / 2 for s in spans]
     midpoints = [
