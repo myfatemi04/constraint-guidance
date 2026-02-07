@@ -60,9 +60,6 @@ class ScheduleEntry:
     sigma: float
     """ Noise level for computing the convolved score. """
 
-    kinetic_weight: float = 50
-    """ How much to weight the kinetic energy score term relative to the obstacle score. The reason to set this high is the agent may go out of bounds to avoid obstacles otherwise, despite the inferior kinetic energy penalty. """
-
     step_size: float = 0.5
     """ The size of the optimizer step. """
 
@@ -119,7 +116,7 @@ DEFAULT_SCHEDULE_MPPI = [
 ]
 
 DEFAULT_SCHEDULE_BOUNDARY_INTEGRALS = [
-    ScheduleEntry(sigma=sigma, step_size=0.2, num_steps=5)
+    ScheduleEntry(sigma=sigma, step_size=1.0, num_steps=15)
     for sigma in [1.0, 0.5, 0.25, 0.1, 0.05, 0.025, 0.01]
 ]
 
@@ -176,6 +173,8 @@ def solve(
     t0 = time.time()
 
     for schedule_entry in schedule:
+        print(schedule_entry)
+
         for i in range(schedule_entry.num_steps):
             match score_computation_method:
                 case ScoreComputationMethod.APPROXIMATE_V0:

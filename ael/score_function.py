@@ -730,7 +730,7 @@ def compute_feasibility_score_numerator(
     delta_x = x - xy[:, 0, np.newaxis, np.newaxis]
     delta_y = y - xy[:, 1, np.newaxis, np.newaxis]
     exp_arg = -0.5 * (delta_x**2 + delta_y**2) / (sigma**2)
-    log_scaler = 0 * exp_arg.max(axis=-1).max(axis=-1)
+    log_scaler = exp_arg.max(axis=-1).max(axis=-1)
     exp_arg_adjusted = exp_arg - log_scaler[:, np.newaxis, np.newaxis]
 
     gaussian_pdf = np.exp(exp_arg_adjusted) / (2 * np.pi * sigma**2)
@@ -828,12 +828,12 @@ def compute_score_from_boundary_integrals(
         )
 
         # Include other agents as surfaces and disks.
+        index = obstacle_boundaries.shape[0]
         for other_agent_i in range(trajectory.shape[1]):
-            index = obstacle_boundaries.shape[0]
-            for t in range(trajectory.shape[0]):
-                if other_agent_i == agent_i:
-                    continue
+            if other_agent_i == agent_i:
+                continue
 
+            for t in range(trajectory.shape[0]):
                 # Create new surfaces for agent-agent interactions.
                 # These are circles around the other agents with radius equal to the sum of the agent radii.
                 other_agent_trajectory = trajectory[:, other_agent_i, :]
@@ -878,7 +878,7 @@ def compute_score_from_boundary_integrals(
         score[:, agent_i, :] = obs_feas_score
 
         # Kinetic energy component.
-        mu = (score[2:, agent_i, :] + score[:-2, agent_i, :]) / 2
+        mu = (trajectory[2:, agent_i, :] + trajectory[:-2, agent_i, :]) / 2
         score[1:-1, agent_i, :] += (
             1 / (1 + sigma**2) * (mu - trajectory[1:-1, agent_i, :])
         )
