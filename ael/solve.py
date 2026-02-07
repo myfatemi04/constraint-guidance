@@ -116,8 +116,9 @@ DEFAULT_SCHEDULE_MPPI = [
 ]
 
 DEFAULT_SCHEDULE_BOUNDARY_INTEGRALS = [
-    ScheduleEntry(sigma=sigma, step_size=1.0, num_steps=15)
-    for sigma in [1.0, 0.5, 0.25, 0.1, 0.05, 0.025, 0.01]
+    ScheduleEntry(sigma=sigma, step_size=0.1, num_steps=200)
+    # for sigma in [1.0, 0.5, 0.25, 0.1, 0.05, 0.025, 0.01]
+    for sigma in [0.01, 0.005]
 ]
 
 
@@ -154,8 +155,14 @@ def solve(
     start_positions = problem.agent_start_positions
     end_positions = problem.agent_end_positions
 
+    # start_positions = np.zeros((problem.num_agents, 2))
+    # end_positions = np.zeros((problem.num_agents, 2))
+    # start_positions[:, 0] = -1.0
+    # end_positions[:, 0] = -1.0
+    # end_positions[:, 1] = 1.0
+
     trajectory = np.linspace(start_positions, end_positions, num=64, axis=0)
-    trajectory += np.random.randn(*trajectory.shape) * 0.1
+    # trajectory += np.random.randn(*trajectory.shape) * 0.1
 
     trajectory[0] = start_positions
     trajectory[-1] = end_positions
