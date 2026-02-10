@@ -105,7 +105,7 @@ DEFAULT_SCHEDULE_MPPI = [
     ScheduleEntry(
         sigma=sigma,
         step_size=1.0,
-        num_steps=100,
+        num_steps=20,
         score_fn_kwargs=dict(
             agent_agent_constraint_tolerance=0.0,
             agent_obstacle_constraint_tolerance=0.0,

@@ -524,6 +524,7 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
     agent_obstacle_constraint_tolerance: float,
     velocity_constraint_tolerance: float,
     use_velocity_baseline: bool = False,
+    kinetic_energy_lambda: float = 5,
 ) -> MPPITrajectoryEvaluation:
     """
     Estimates trajectory likelihoods by adding noise to each coordinate separately.
@@ -625,10 +626,10 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
     )
 
     result["kinetic_energy"][:, 1:] *= np.exp(
-        -delta_kinetic_energy_per_deviation_reverse
+        -delta_kinetic_energy_per_deviation_reverse * kinetic_energy_lambda
     )
     result["kinetic_energy"][:, :-1] *= np.exp(
-        -delta_kinetic_energy_per_deviation_forward
+        -delta_kinetic_energy_per_deviation_forward * kinetic_energy_lambda
     )
 
     return MPPITrajectoryEvaluation(
@@ -637,10 +638,8 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
         velocity=result["velocity"],
         kinetic_energy=result["kinetic_energy"],
         overall=(
-            result["kinetic_energy"]
-            * result["agent_agent"]
-            * result["agent_obstacle"]
-            * result["velocity"]
+            result["kinetic_energy"] * result["agent_agent"] * result["agent_obstacle"]
+            # * result["velocity"]
         ),
     )
 
@@ -668,8 +667,8 @@ def compute_score_mppi_factorized(
         # divide over batch dimension
         np.sum(evaluation.overall, axis=0) + eps
     )
-    acceptance = evaluation.overall > 0
-    print(acceptance.sum() / np.prod(evaluation.overall.shape))
+    # acceptance = evaluation.overall > 0
+    # print(acceptance.sum() / np.prod(evaluation.overall.shape))
     # score = 1 / sigma**2 * np.sum(noise * weights[:, :, :, None], axis=0)
     score = np.sum(noise * weights[:, :, :, None], axis=0)
     return score
