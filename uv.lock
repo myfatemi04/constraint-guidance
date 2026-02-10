@@ -1254,6 +1254,12 @@ wheels = [
 ]
 
 [[package]]
+name = "pyvisgraph"
+version = "0.2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0a/ea/0d1d0cf10b56f661c77ac0e9fae420e05199dac9d70f0e170ce4d99a171d/pyvisgraph-0.2.1.tar.gz", hash = "sha256:b7c6895d9e00ed7771e3db187fb079a236616adfc20abbbb97aefe43de54e990", size = 8760, upload-time = "2018-06-03T07:42:27.717Z" }
+
+[[package]]
 name = "pyzmq"
 version = "27.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1343,6 +1349,7 @@ dependencies = [
     { name = "numpy" },
     { name = "pandas" },
     { name = "pyomo" },
+    { name = "pyvisgraph" },
     { name = "ruff" },
     { name = "tensordict" },
     { name = "torch" },
@@ -1360,6 +1367,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.1" },
     { name = "pandas", specifier = ">=3.0.0" },
     { name = "pyomo", specifier = ">=6.9.5" },
+    { name = "pyvisgraph", specifier = ">=0.2.1" },
     { name = "ruff", specifier = ">=0.14.14" },
     { name = "tensordict", specifier = ">=0.10.0" },
     { name = "torch", specifier = ">=2.9.1" },
