@@ -3,6 +3,7 @@ Creates a prior distribution based on visibility graphs.
 """
 
 import json
+import pprint
 from typing import cast
 
 import matplotlib.pyplot as plt
@@ -91,10 +92,17 @@ def identify_visible_pieces(start_location, polygons):
 
             # counterintuitively, we should have that the theta for the second point in the edge is smaller than the theta for the first point in the edge
             if edge_end_theta > edge_start_theta:
-                edge_end_theta = edge_end_theta - 2 * np.pi
+                edge_start_theta = edge_start_theta + 2 * np.pi
             edge_identifier = (obstacle_i, vertex_i)
             events.append((edge_end_theta, edge_identifier, "add"))
             events.append((edge_start_theta, edge_identifier, "remove"))
+
+    # duplicate events but with theta + 2 * pi to handle wrap around.
+    original_event_count = len(events)
+    # events += [
+    #     (theta + 2 * np.pi, edge_identifier, action)
+    #     for theta, edge_identifier, action in events
+    # ]
 
     events = sorted(events)
 
@@ -105,7 +113,7 @@ def identify_visible_pieces(start_location, polygons):
     # The theta in `pieces` indicates the *start theta* for that piece.
     pieces = []
     leading_edge = None
-    for theta, edge_identifier, action in events:
+    for theta, edge_identifier, action in events[:original_event_count]:
         if action == "remove":
             active_edges.remove(edge_identifier)
             if leading_edge == edge_identifier:
@@ -144,11 +152,15 @@ def identify_visible_pieces(start_location, polygons):
 
     # remove earlier pieces if there is the same theta.
     final_pieces = []
+    prev_theta = None
     for theta, edge_identifier in pieces:
-        if len(final_pieces) > 0 and final_pieces[-1][0] == theta:
+        if theta == prev_theta:
             final_pieces[-1] = (theta, edge_identifier)
         else:
             final_pieces.append((theta, edge_identifier))
+        prev_theta = theta
+
+    pprint.pprint(final_pieces)
 
     return final_pieces
 
@@ -202,6 +214,7 @@ def main():
             continue
 
         obstacle_i, vertex_i = edge_identifier
+
         polygon = polygons[obstacle_i]
         vertex = polygon[vertex_i]
         next_vertex = polygon[(vertex_i + 1) % len(polygon)]
@@ -238,6 +251,56 @@ def main():
             [seen_point[0], next_seen_point[0]],
             [seen_point[1], next_seen_point[1]],
             "r-",
+        )
+        # plt.pause(0.5)
+
+    # make a new polygon out of the pieces.
+    for piece_i, (theta, edge_identifier) in enumerate(pieces):
+        if pieces[piece_i - 1][1] is None or edge_identifier is None:
+            continue
+        # make line from current depth to depth of previous polygon
+        (_prev_theta_start, (prev_obstacle_i, prev_first_vertex_i)) = pieces[
+            piece_i - 1
+        ]
+        prev_second_vertex_i = (prev_first_vertex_i + 1) % len(
+            polygons[prev_obstacle_i]
+        )
+        prev_first_vertex = polygons[prev_obstacle_i][prev_first_vertex_i]
+        prev_second_vertex = polygons[prev_obstacle_i][prev_second_vertex_i]
+        prev_distance = get_distance_at_theta(
+            start_location,
+            theta,
+            prev_first_vertex,
+            prev_second_vertex,
+        )
+
+        next_theta = pieces[(piece_i + 1) % len(pieces)][0]
+        obstacle_i, vertex_i = edge_identifier
+        polygon = polygons[obstacle_i]
+        vertex = polygon[vertex_i]
+        next_vertex = polygon[(vertex_i + 1) % len(polygon)]
+        distance = get_distance_at_theta(start_location, theta, vertex, next_vertex)
+        next_distance = get_distance_at_theta(
+            start_location, next_theta, vertex, next_vertex
+        )
+        seen_point = start_location + distance * np.array(
+            [np.cos(theta), np.sin(theta)]
+        )
+        next_seen_point = start_location + next_distance * np.array(
+            [np.cos(next_theta), np.sin(next_theta)]
+        )
+
+        plt.plot(
+            [
+                start_location[0] + distance * np.cos(theta),
+                start_location[0] + prev_distance * np.cos(theta),
+            ],
+            [
+                start_location[1] + distance * np.sin(theta),
+                start_location[1] + prev_distance * np.sin(theta),
+            ],
+            c="r",
+            alpha=0.2,
         )
 
     plt.show()
