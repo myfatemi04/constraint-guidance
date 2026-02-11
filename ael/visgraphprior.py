@@ -64,47 +64,26 @@ def get_distance_at_theta(start_location, theta, vertex, next_vertex):
     return distance
 
 
-def main():
-    with open("instances_data/instances_dense.json") as f:
-        data = json.load(f)
-
-    problem = Problem.from_json(data[0])
-
-    polygons = np.zeros((problem.num_obstacles, 6, 2))
-    circle_approximation_num_sides = 6
-
-    for obstacle_i in range(problem.num_obstacles):
-        x, y = problem.obstacle_positions[obstacle_i]
-        r = problem.obstacle_radii[obstacle_i] + problem.agent_radii[0]
-        polygons[obstacle_i] = [
-            [
-                x + r * np.cos(j * 2 * np.pi / circle_approximation_num_sides),
-                y + r * np.sin(j * 2 * np.pi / circle_approximation_num_sides),
-            ]
-            for j in range(circle_approximation_num_sides)
-        ]
-
-    start_location = problem.agent_start_positions[0]
-
+def identify_visible_pieces(start_location, polygons):
     # Iterate over all points outside of start position.
     # Edges shall be identified by (polygon_index, vertex_index).
     # Vertices stored will be in order of (angle, edge identifier).
     # Then, consecutive vertices can be checked for visibility.
     # We assume that all edges are non-intersecting line segments.
     events = []
-    for obstacle_i in range(problem.num_obstacles):
+    for obstacle_i in range(len(polygons)):
+        polygon = polygons[obstacle_i]
         thetas = np.arctan2(
-            polygons[obstacle_i, :, 1] - start_location[1],
-            polygons[obstacle_i, :, 0] - start_location[0],
+            polygon[:, 1] - start_location[1], polygon[:, 0] - start_location[0]
         )
-        for vertex_i in range(circle_approximation_num_sides):
+        npts = len(polygon)
+        for vertex_i in range(npts):
             edge_start_theta = thetas[vertex_i]
-            edge_end_theta = thetas[(vertex_i + 1) % circle_approximation_num_sides]
+            edge_end_theta = thetas[(vertex_i + 1) % npts]
             # check that this edge has the correct orientation.
             cross_prod = np.cross(
-                polygons[obstacle_i, vertex_i] - start_location,
-                polygons[obstacle_i, (vertex_i + 1) % circle_approximation_num_sides]
-                - start_location,
+                polygon[vertex_i] - start_location,
+                polygon[(vertex_i + 1) % npts] - start_location,
             )
             if cross_prod > 0:
                 # the vector that points to the direction of the edge must move clockwise for this edge to be visible
@@ -137,16 +116,16 @@ def main():
         elif action == "add":
             distances_to_active_edges = []
             for obstacle_i, vertex_i in active_edges:
-                vertex = polygons[obstacle_i, vertex_i]
-                next_vertex = polygons[
-                    obstacle_i, (vertex_i + 1) % circle_approximation_num_sides
-                ]
+                polygon = polygons[obstacle_i]
+                vertex = polygon[vertex_i]
+                next_vertex = polygon[(vertex_i + 1) % len(polygon)]
                 distances_to_active_edges.append(
                     get_distance_at_theta(start_location, theta, vertex, next_vertex)
                 )
 
             obstacle_i, vertex_i = edge_identifier
-            my_dist = np.linalg.norm(polygons[obstacle_i, vertex_i] - start_location)
+            polygon = polygons[obstacle_i]
+            my_dist = np.linalg.norm(polygon[vertex_i] - start_location)
 
             insertion_index = 0
             while insertion_index < len(distances_to_active_edges):
@@ -171,7 +150,32 @@ def main():
         else:
             final_pieces.append((theta, edge_identifier))
 
-    pieces = final_pieces
+    return final_pieces
+
+
+def main():
+    with open("instances_data/instances_dense.json") as f:
+        data = json.load(f)
+
+    problem = Problem.from_json(data[0])
+
+    polygons = np.zeros((problem.num_obstacles, 6, 2))
+    circle_approximation_num_sides = 6
+
+    for obstacle_i in range(problem.num_obstacles):
+        x, y = problem.obstacle_positions[obstacle_i]
+        r = problem.obstacle_radii[obstacle_i] + problem.agent_radii[0]
+        polygons[obstacle_i] = [
+            [
+                x + r * np.cos(j * 2 * np.pi / circle_approximation_num_sides),
+                y + r * np.sin(j * 2 * np.pi / circle_approximation_num_sides),
+            ]
+            for j in range(circle_approximation_num_sides)
+        ]
+
+    start_location = problem.agent_start_positions[0]
+
+    pieces = identify_visible_pieces(start_location, list(polygons))
 
     from ael.visualize import visualize
 
@@ -190,24 +194,6 @@ def main():
         seen_point = start_location + distance * np.array(
             [np.cos(theta), np.sin(theta)]
         )
-
-        # Plot the edge itself.
-        # plt.plot(
-        #     [
-        #         polygons[obstacle_i, vertex_i, 0],
-        #         polygons[
-        #             obstacle_i, (vertex_i + 1) % circle_approximation_num_sides, 0
-        #         ],
-        #     ],
-        #     [
-        #         polygons[obstacle_i, vertex_i, 1],
-        #         polygons[
-        #             obstacle_i, (vertex_i + 1) % circle_approximation_num_sides, 1
-        #         ],
-        #     ],
-        #     "k-",
-        #     alpha=0.5,
-        # )
 
         # This section of the edge stops being seen at the next theta.
         next_theta = pieces[(piece_i + 1) % len(pieces)][0]
