@@ -11,7 +11,13 @@ from matplotlib.axes import Axes
 from ael.problem import Problem
 
 
-def visualize(problem: Problem, ax: Axes, agent_positions: np.ndarray | None = None):
+def visualize(
+    problem: Problem,
+    ax: Axes,
+    agent_positions: np.ndarray | None = None,
+    start_markersize: float = 10.0,
+    end_markersize: float = 10.0,
+):
     # Plot the obstacles
     for obs_index in range(problem.num_obstacles):
         x, y = problem.obstacle_positions[obs_index].tolist()
@@ -48,7 +54,7 @@ def visualize(problem: Problem, ax: Axes, agent_positions: np.ndarray | None = N
             sy,
             marker="o",
             color="green",
-            markersize=10,
+            markersize=start_markersize,
             label=f"Start {agent_index}",
         )
         ax.plot(
@@ -56,7 +62,7 @@ def visualize(problem: Problem, ax: Axes, agent_positions: np.ndarray | None = N
             ey,
             marker="*",
             color="blue",
-            markersize=10,
+            markersize=end_markersize,
             label=f"Goal {agent_index}",
         )
 
