@@ -340,5 +340,133 @@ def main():
     plt.show()
 
 
+def voronoi_plot_2d(vor, ax, obstacle_positions, obstacle_radii, **kw):
+    """
+    From scipy
+    """
+    from matplotlib.collections import LineCollection
+
+    if vor.points.shape[1] != 2:
+        raise ValueError("Voronoi diagram is not 2-D")
+
+    if kw.get("show_points", True):
+        point_size = kw.get("point_size", None)
+        ax.plot(vor.points[:, 0], vor.points[:, 1], ".", markersize=point_size)
+    if kw.get("show_vertices", True):
+        ax.plot(vor.vertices[:, 0], vor.vertices[:, 1], "o")
+
+    line_colors = kw.get("line_colors", "k")
+    line_width = kw.get("line_width", 1.0)
+    line_alpha = kw.get("line_alpha", 1.0)
+
+    center = vor.points.mean(axis=0)
+    ptp_bound = np.ptp(vor.points, axis=0)
+
+    finite_segments = []
+    infinite_segments = []
+    for pointidx, simplex in zip(vor.ridge_points, vor.ridge_vertices):
+        simplex = np.asarray(simplex)
+        # check if either vertex is in an obstacle
+        in_obs = False
+        for vertex in vor.vertices[simplex[simplex >= 0]]:
+            for obstacle_pos, obstacle_radius in zip(
+                obstacle_positions, obstacle_radii
+            ):
+                if np.linalg.norm(vertex - obstacle_pos) < obstacle_radius:
+                    in_obs = True
+        if in_obs:
+            continue
+        if np.all(simplex >= 0):
+            finite_segments.append(vor.vertices[simplex])
+        else:
+            i = simplex[simplex >= 0][0]  # finite end Voronoi vertex
+
+            t = vor.points[pointidx[1]] - vor.points[pointidx[0]]  # tangent
+            t /= np.linalg.norm(t)
+            n = np.array([-t[1], t[0]])  # normal
+
+            midpoint = vor.points[pointidx].mean(axis=0)
+            direction = np.sign(np.dot(midpoint - center, n)) * n
+            if vor.furthest_site:
+                direction = -direction
+            aspect_factor = abs(ptp_bound.max() / ptp_bound.min())
+            far_point = vor.vertices[i] + direction * ptp_bound.max() * aspect_factor
+
+            infinite_segments.append([vor.vertices[i], far_point])
+
+    ax.add_collection(
+        LineCollection(
+            finite_segments,
+            colors=line_colors,
+            lw=line_width,
+            alpha=line_alpha,
+            linestyle="solid",
+        )
+    )
+    ax.add_collection(
+        LineCollection(
+            infinite_segments,
+            colors=line_colors,
+            lw=line_width,
+            alpha=line_alpha,
+            linestyle="dashed",
+        )
+    )
+
+    return ax.figure
+
+
+def main_voronoi():
+    with open("instances_data/instances_dense.json") as f:
+        data = json.load(f)
+
+    problem = Problem.from_json(data[10])
+
+    polygons = []
+    circle_approximation_num_sides = 6
+
+    for obstacle_i in range(problem.num_obstacles):
+        x, y = problem.obstacle_positions[obstacle_i]
+        r = problem.obstacle_radii[obstacle_i] + problem.agent_radii[0]
+        polygons.append(
+            np.array(
+                [
+                    [
+                        x + r * np.cos(j * 2 * np.pi / circle_approximation_num_sides),
+                        y + r * np.sin(j * 2 * np.pi / circle_approximation_num_sides),
+                    ]
+                    for j in range(circle_approximation_num_sides)
+                ]
+            )
+        )
+
+    # Note: order here must be counter clockwise to represent the flipped orientation.
+    polygons.append(
+        np.array(
+            [
+                [-1, -1],
+                [-1, 1],
+                [1, 1],
+                [1, -1],
+            ]
+        )
+    )
+
+    all_points = []
+    for polygon in polygons:
+        all_points.extend(polygon)
+    all_points = np.array(all_points)
+
+    from scipy.spatial import Voronoi
+
+    from ael.visualize import visualize
+
+    visualize(problem, plt.gca(), start_markersize=2, end_markersize=2)
+    vor = Voronoi(all_points)
+    # remove points inside obstacles (just using the radius check)
+    voronoi_plot_2d(vor, plt.gca(), problem.obstacle_positions, problem.obstacle_radii)
+    plt.show()
+
+
 if __name__ == "__main__":
-    main()
+    main_voronoi()
