@@ -72,6 +72,7 @@ def identify_visible_pieces(start_location, polygons):
     # Then, consecutive vertices can be checked for visibility.
     # We assume that all edges are non-intersecting line segments.
     events = []
+    active_at_branch_cut = []
     for obstacle_i in range(len(polygons)):
         polygon = polygons[obstacle_i]
         thetas = np.arctan2(
@@ -79,8 +80,8 @@ def identify_visible_pieces(start_location, polygons):
         )
         npts = len(polygon)
         for vertex_i in range(npts):
-            edge_start_theta = thetas[vertex_i]
-            edge_end_theta = thetas[(vertex_i + 1) % npts]
+            remove_edge_theta = thetas[vertex_i]
+            add_edge_theta = thetas[(vertex_i + 1) % npts]
             # check that this edge has the correct orientation.
             cross_prod = np.cross(
                 polygon[vertex_i] - start_location,
@@ -90,30 +91,23 @@ def identify_visible_pieces(start_location, polygons):
                 # the vector that points to the direction of the edge must move clockwise for this edge to be visible
                 continue
 
-            # counterintuitively, we should have that the theta for the second point in the edge is smaller than the theta for the first point in the edge
-            if edge_end_theta > edge_start_theta:
-                edge_start_theta = edge_start_theta + 2 * np.pi
             edge_identifier = (obstacle_i, vertex_i)
-            events.append((edge_end_theta, edge_identifier, "add"))
-            events.append((edge_start_theta, edge_identifier, "remove"))
-
-    # duplicate events but with theta + 2 * pi to handle wrap around.
-    original_event_count = len(events)
-    # events += [
-    #     (theta + 2 * np.pi, edge_identifier, action)
-    #     for theta, edge_identifier, action in events
-    # ]
+            events.append((add_edge_theta, edge_identifier, "add"))
+            events.append((remove_edge_theta, edge_identifier, "remove"))
+            if add_edge_theta > remove_edge_theta:
+                active_at_branch_cut.append(edge_identifier)
 
     events = sorted(events)
 
     # Now, identify the points that are visible from the start location.
     # In the `active_edges` list, edges are kept in the order of their distance from the start location.
-    active_edges = []
+    active_edges = active_at_branch_cut
     # In the `pieces` list, we log whenever there's a change in the closest edge (which is active_edges[0]).
     # The theta in `pieces` indicates the *start theta* for that piece.
     pieces = []
     leading_edge = None
-    for theta, edge_identifier, action in events[:original_event_count]:
+
+    for theta, edge_identifier, action in events:
         if action == "remove":
             active_edges.remove(edge_identifier)
             if leading_edge == edge_identifier:
@@ -169,7 +163,7 @@ def main():
     with open("instances_data/instances_dense.json") as f:
         data = json.load(f)
 
-    problem = Problem.from_json(data[0])
+    problem = Problem.from_json(data[31])
 
     polygons = []
     circle_approximation_num_sides = 6
@@ -215,6 +209,8 @@ def main():
 
         obstacle_i, vertex_i = edge_identifier
 
+        color = "r" if edge_identifier == (9, 5) else "b"
+
         polygon = polygons[obstacle_i]
         vertex = polygon[vertex_i]
         next_vertex = polygon[(vertex_i + 1) % len(polygon)]
@@ -232,25 +228,11 @@ def main():
             [np.cos(next_theta), np.sin(next_theta)]
         )
 
-        # Plot line of sight to first seen point.
-        plt.plot(
-            [start_location[0], seen_point[0]],
-            [start_location[1], seen_point[1]],
-            c="gray",
-            alpha=0.2,
-        )
-        # Plot line of sight to next seen point.
-        plt.plot(
-            [start_location[0], next_seen_point[0]],
-            [start_location[1], next_seen_point[1]],
-            c="gray",
-            alpha=0.2,
-        )
         # Plot line of sight between the seen points.
         plt.plot(
             [seen_point[0], next_seen_point[0]],
             [seen_point[1], next_seen_point[1]],
-            "r-",
+            color + "-",
         )
         # plt.pause(0.5)
 
