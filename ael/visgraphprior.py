@@ -159,19 +159,35 @@ def main():
 
     problem = Problem.from_json(data[0])
 
-    polygons = np.zeros((problem.num_obstacles, 6, 2))
+    polygons = []
     circle_approximation_num_sides = 6
 
     for obstacle_i in range(problem.num_obstacles):
         x, y = problem.obstacle_positions[obstacle_i]
         r = problem.obstacle_radii[obstacle_i] + problem.agent_radii[0]
-        polygons[obstacle_i] = [
+        polygons.append(
+            np.array(
+                [
+                    [
+                        x + r * np.cos(j * 2 * np.pi / circle_approximation_num_sides),
+                        y + r * np.sin(j * 2 * np.pi / circle_approximation_num_sides),
+                    ]
+                    for j in range(circle_approximation_num_sides)
+                ]
+            )
+        )
+
+    # Note: order here must be counter clockwise to represent the flipped orientation.
+    polygons.append(
+        np.array(
             [
-                x + r * np.cos(j * 2 * np.pi / circle_approximation_num_sides),
-                y + r * np.sin(j * 2 * np.pi / circle_approximation_num_sides),
+                [-1, -1],
+                [-1, 1],
+                [1, 1],
+                [1, -1],
             ]
-            for j in range(circle_approximation_num_sides)
-        ]
+        )
+    )
 
     start_location = problem.agent_start_positions[0]
 
@@ -186,10 +202,9 @@ def main():
             continue
 
         obstacle_i, vertex_i = edge_identifier
-        vertex = polygons[obstacle_i, vertex_i]
-        next_vertex = polygons[
-            obstacle_i, (vertex_i + 1) % circle_approximation_num_sides
-        ]
+        polygon = polygons[obstacle_i]
+        vertex = polygon[vertex_i]
+        next_vertex = polygon[(vertex_i + 1) % len(polygon)]
         distance = get_distance_at_theta(start_location, theta, vertex, next_vertex)
         seen_point = start_location + distance * np.array(
             [np.cos(theta), np.sin(theta)]
