@@ -160,6 +160,85 @@ def identify_visible_pieces(start_location, polygons):
     return final_pieces
 
 
+def create_observed_polygon_graph(pieces, polygons, start_location):
+    # Representation strategy:
+    observed_polygon_points = []
+    observed_polygon_source_obstacle_indices = []
+    observed_polygon_graph_neighbors = defaultdict(set)
+
+    for piece_i, (theta, edge_identifier) in enumerate(pieces):
+        obstacle_i, vertex_i = edge_identifier
+
+        color = "r" if edge_identifier == (9, 5) else "b"
+
+        polygon = polygons[obstacle_i]
+        vertex = polygon[vertex_i]
+        next_vertex = polygon[(vertex_i + 1) % len(polygon)]
+        curr_theta_distance = get_distance_at_theta(
+            start_location, theta, vertex, next_vertex
+        )
+        seen_point = start_location + curr_theta_distance * np.array(
+            [np.cos(theta), np.sin(theta)]
+        )
+
+        # This section of the edge stops being seen at the next theta.
+        next_theta = pieces[(piece_i + 1) % len(pieces)][0]
+        next_theta_distance = get_distance_at_theta(
+            start_location, next_theta, vertex, next_vertex
+        )
+        next_seen_point = start_location + next_theta_distance * np.array(
+            [np.cos(next_theta), np.sin(next_theta)]
+        )
+
+        # Create polygon for the observed piece.
+        observed_polygon = np.array([start_location, seen_point, next_seen_point])
+        observed_polygon_points.append(observed_polygon)
+        observed_polygon_source_obstacle_indices.append(obstacle_i)
+
+        # Plot centroid of observed polygon.
+        centroid = np.mean(observed_polygon, axis=0)
+        plt.plot(centroid[0], centroid[1], color + "x")
+
+    # create edges
+    for i in range(len(observed_polygon_points)):
+        observed_polygon_graph_neighbors[i].add((i + 1) % len(observed_polygon_points))
+        observed_polygon_graph_neighbors[i].add((i - 1) % len(observed_polygon_points))
+
+    return (
+        observed_polygon_points,
+        observed_polygon_source_obstacle_indices,
+        observed_polygon_graph_neighbors,
+    )
+
+
+def identify_frontier_points(observed_polygon_points):
+    # for numerical stability
+    eps = 1e-6
+    sweep_point = observed_polygon_points[0][1]
+    frontier_points = []
+
+    # add the first polygon twice, to give a chance in case point1 of the first polygon is a sudden jump deeper from point2 of the last polygon.
+    # points can be added if they are at the start of the new polygon and deeper or the end of the old polygon and deeper.
+    for observed_polygon in [*observed_polygon_points, observed_polygon_points[0]]:
+        viewer_pos, point1, point2 = observed_polygon
+
+        # if point1's depth != sweep_depth, then whichever point is deeper is the frontier point.
+        point1_depth = np.linalg.norm(point1 - viewer_pos)
+        sweep_depth = np.linalg.norm(sweep_point - viewer_pos)
+        if abs(point1_depth - sweep_depth) > eps:
+            frontier_points.append(sweep_point)
+            frontier_points.append(point1)
+
+        sweep_point = point2
+
+    return frontier_points
+
+
+def visualize_visibility_border(polygons):
+    for polygon in polygons:
+        plt.plot(polygon[1:, 0], polygon[1:, 1], "k-")
+
+
 def main():
     with open("instances_data/instances_dense.json") as f:
         data = json.load(f)
@@ -204,92 +283,61 @@ def main():
 
     visualize(problem, plt.gca(), start_markersize=2, end_markersize=2)
 
-    # Representation strategy:
-    observed_polygons = []
-    observed_polygon_graph_neighbors = defaultdict(set)
+    visibility_polygons = []
 
-    for piece_i, (theta, edge_identifier) in enumerate(pieces):
-        obstacle_i, vertex_i = edge_identifier
+    (
+        observed_polygons,
+        observed_polygon_source_obstacle_indices,
+        observed_polygon_graph_neighbors,
+    ) = create_observed_polygon_graph(pieces, polygons, start_location)
 
-        color = "r" if edge_identifier == (9, 5) else "b"
+    polygons.extend(observed_polygons)
+    visibility_polygons.extend(observed_polygons)
 
-        polygon = polygons[obstacle_i]
-        vertex = polygon[vertex_i]
-        next_vertex = polygon[(vertex_i + 1) % len(polygon)]
-        curr_theta_distance = get_distance_at_theta(
-            start_location, theta, vertex, next_vertex
-        )
-        seen_point = start_location + curr_theta_distance * np.array(
-            [np.cos(theta), np.sin(theta)]
-        )
-
-        # This section of the edge stops being seen at the next theta.
-        next_theta = pieces[(piece_i + 1) % len(pieces)][0]
-        next_theta_distance = get_distance_at_theta(
-            start_location, next_theta, vertex, next_vertex
-        )
-        next_seen_point = start_location + next_theta_distance * np.array(
-            [np.cos(next_theta), np.sin(next_theta)]
-        )
-
-        # make line from current depth to depth of previous polygon
-        (_prev_theta_start, (prev_obstacle_i, prev_first_vertex_i)) = pieces[
-            piece_i - 1
-        ]
-        prev_second_vertex_i = (prev_first_vertex_i + 1) % len(
-            polygons[prev_obstacle_i]
-        )
-        prev_first_vertex = polygons[prev_obstacle_i][prev_first_vertex_i]
-        prev_second_vertex = polygons[prev_obstacle_i][prev_second_vertex_i]
-        prev_theta_distance = get_distance_at_theta(
-            start_location,
-            theta,
-            prev_first_vertex,
-            prev_second_vertex,
-        )
-
-        plt.plot(
-            [
-                start_location[0] + curr_theta_distance * np.cos(theta),
-                start_location[0] + prev_theta_distance * np.cos(theta),
-            ],
-            [
-                start_location[1] + curr_theta_distance * np.sin(theta),
-                start_location[1] + prev_theta_distance * np.sin(theta),
-            ],
-            c="r",
-            alpha=0.2,
-        )
-
-        # Plot line of sight between the seen points.
-        plt.plot(
-            [seen_point[0], next_seen_point[0]],
-            [seen_point[1], next_seen_point[1]],
-            color + "-",
-        )
-
-        # Create polygon for the observed piece.
-        observed_polygon = np.array([start_location, seen_point, next_seen_point])
-        observed_polygons.append(observed_polygon)
-
-        # Plot centroid of observed polygon.
-        centroid = np.mean(observed_polygon, axis=0)
-        plt.plot(centroid[0], centroid[1], color + "x")
-
-    # create edges
-    for i in range(len(observed_polygons)):
-        observed_polygon_graph_neighbors[i].add((i + 1) % len(observed_polygons))
-        observed_polygon_graph_neighbors[i].add((i - 1) % len(observed_polygons))
-
+    # pick any point at the frontier. these are points on visibility polygons where there were sudden jumps in the depth.
+    frontier = identify_frontier_points(observed_polygons)
+    furthest_frontier_point = max(
+        frontier, key=lambda point: np.linalg.norm(point - start_location)
+    )
+    visualize_visibility_border(observed_polygons)
+    for point in frontier:
+        plt.scatter(point[0], point[1], c="r", marker="x")
+    plt.scatter(
+        furthest_frontier_point[0], furthest_frontier_point[1], c="g", marker="x"
+    )
     plt.show()
 
-    # OK, now to make this into a complete tree search, we can create a frontier of edges to explore from.
-    # Then whenever one of these edges has a "visible piece" on the observed region, we can sort of do a
-    # loop closure type of thing.
+    visualize(problem, plt.gca(), start_markersize=2, end_markersize=2)
 
-    start_location = problem.agent_start_positions[0]
+    start_location = furthest_frontier_point
 
     pieces = identify_visible_pieces(start_location, list(polygons))
+    (
+        observed_polygons,
+        observed_polygon_source_obstacle_indices,
+        observed_polygon_graph_neighbors,
+    ) = create_observed_polygon_graph(pieces, polygons, start_location)
+
+    for polygon in polygons:
+        for i in range(len(polygon)):
+            plt.plot(
+                polygon[[i, (i + 1) % len(polygon)], 0],
+                polygon[[i, (i + 1) % len(polygon)], 1],
+                "k-",
+                c="blue",
+            )
+
+    for polygon in observed_polygons:
+        for i in range(len(polygon)):
+            plt.plot(
+                polygon[[i, (i + 1) % len(polygon)], 0],
+                polygon[[i, (i + 1) % len(polygon)], 1],
+                "k-",
+                c="red",
+            )
+
+    plt.scatter(start_location[0], start_location[1], c="g", marker="o")
+    plt.show()
 
 
 if __name__ == "__main__":
