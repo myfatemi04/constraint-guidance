@@ -3,7 +3,7 @@ Creates a prior distribution based on visibility graphs.
 """
 
 import json
-import pprint
+from collections import defaultdict
 from typing import cast
 
 import matplotlib.pyplot as plt
@@ -154,7 +154,8 @@ def identify_visible_pieces(start_location, polygons):
             final_pieces.append((theta, edge_identifier))
         prev_theta = theta
 
-    pprint.pprint(final_pieces)
+    # import pprint
+    # pprint.pprint(final_pieces)
 
     return final_pieces
 
@@ -163,7 +164,7 @@ def main():
     with open("instances_data/instances_dense.json") as f:
         data = json.load(f)
 
-    problem = Problem.from_json(data[31])
+    problem = Problem.from_json(data[10])
 
     polygons = []
     circle_approximation_num_sides = 6
@@ -203,10 +204,11 @@ def main():
 
     visualize(problem, plt.gca(), start_markersize=2, end_markersize=2)
 
-    for piece_i, (theta, edge_identifier) in enumerate(pieces):
-        if edge_identifier is None:
-            continue
+    # Representation strategy:
+    observed_polygons = []
+    observed_polygon_graph_neighbors = defaultdict(set)
 
+    for piece_i, (theta, edge_identifier) in enumerate(pieces):
         obstacle_i, vertex_i = edge_identifier
 
         color = "r" if edge_identifier == (9, 5) else "b"
@@ -214,32 +216,22 @@ def main():
         polygon = polygons[obstacle_i]
         vertex = polygon[vertex_i]
         next_vertex = polygon[(vertex_i + 1) % len(polygon)]
-        distance = get_distance_at_theta(start_location, theta, vertex, next_vertex)
-        seen_point = start_location + distance * np.array(
+        curr_theta_distance = get_distance_at_theta(
+            start_location, theta, vertex, next_vertex
+        )
+        seen_point = start_location + curr_theta_distance * np.array(
             [np.cos(theta), np.sin(theta)]
         )
 
         # This section of the edge stops being seen at the next theta.
         next_theta = pieces[(piece_i + 1) % len(pieces)][0]
-        next_distance = get_distance_at_theta(
+        next_theta_distance = get_distance_at_theta(
             start_location, next_theta, vertex, next_vertex
         )
-        next_seen_point = start_location + next_distance * np.array(
+        next_seen_point = start_location + next_theta_distance * np.array(
             [np.cos(next_theta), np.sin(next_theta)]
         )
 
-        # Plot line of sight between the seen points.
-        plt.plot(
-            [seen_point[0], next_seen_point[0]],
-            [seen_point[1], next_seen_point[1]],
-            color + "-",
-        )
-        # plt.pause(0.5)
-
-    # make a new polygon out of the pieces.
-    for piece_i, (theta, edge_identifier) in enumerate(pieces):
-        if pieces[piece_i - 1][1] is None or edge_identifier is None:
-            continue
         # make line from current depth to depth of previous polygon
         (_prev_theta_start, (prev_obstacle_i, prev_first_vertex_i)) = pieces[
             piece_i - 1
@@ -249,43 +241,55 @@ def main():
         )
         prev_first_vertex = polygons[prev_obstacle_i][prev_first_vertex_i]
         prev_second_vertex = polygons[prev_obstacle_i][prev_second_vertex_i]
-        prev_distance = get_distance_at_theta(
+        prev_theta_distance = get_distance_at_theta(
             start_location,
             theta,
             prev_first_vertex,
             prev_second_vertex,
         )
 
-        next_theta = pieces[(piece_i + 1) % len(pieces)][0]
-        obstacle_i, vertex_i = edge_identifier
-        polygon = polygons[obstacle_i]
-        vertex = polygon[vertex_i]
-        next_vertex = polygon[(vertex_i + 1) % len(polygon)]
-        distance = get_distance_at_theta(start_location, theta, vertex, next_vertex)
-        next_distance = get_distance_at_theta(
-            start_location, next_theta, vertex, next_vertex
-        )
-        seen_point = start_location + distance * np.array(
-            [np.cos(theta), np.sin(theta)]
-        )
-        next_seen_point = start_location + next_distance * np.array(
-            [np.cos(next_theta), np.sin(next_theta)]
-        )
-
         plt.plot(
             [
-                start_location[0] + distance * np.cos(theta),
-                start_location[0] + prev_distance * np.cos(theta),
+                start_location[0] + curr_theta_distance * np.cos(theta),
+                start_location[0] + prev_theta_distance * np.cos(theta),
             ],
             [
-                start_location[1] + distance * np.sin(theta),
-                start_location[1] + prev_distance * np.sin(theta),
+                start_location[1] + curr_theta_distance * np.sin(theta),
+                start_location[1] + prev_theta_distance * np.sin(theta),
             ],
             c="r",
             alpha=0.2,
         )
 
+        # Plot line of sight between the seen points.
+        plt.plot(
+            [seen_point[0], next_seen_point[0]],
+            [seen_point[1], next_seen_point[1]],
+            color + "-",
+        )
+
+        # Create polygon for the observed piece.
+        observed_polygon = np.array([start_location, seen_point, next_seen_point])
+        observed_polygons.append(observed_polygon)
+
+        # Plot centroid of observed polygon.
+        centroid = np.mean(observed_polygon, axis=0)
+        plt.plot(centroid[0], centroid[1], color + "x")
+
+    # create edges
+    for i in range(len(observed_polygons)):
+        observed_polygon_graph_neighbors[i].add((i + 1) % len(observed_polygons))
+        observed_polygon_graph_neighbors[i].add((i - 1) % len(observed_polygons))
+
     plt.show()
+
+    # OK, now to make this into a complete tree search, we can create a frontier of edges to explore from.
+    # Then whenever one of these edges has a "visible piece" on the observed region, we can sort of do a
+    # loop closure type of thing.
+
+    start_location = problem.agent_start_positions[0]
+
+    pieces = identify_visible_pieces(start_location, list(polygons))
 
 
 if __name__ == "__main__":
