@@ -146,18 +146,21 @@ def main(args: MainArgs):
             raise ValueError("sample_index out of range.")
 
         problem = Problem.from_json(problems[args.sample_index], type="numpy")
+        problem.identifier = f"{args.problem_set}_{args.sample_index}"
 
     elif args.num_robots is not None:
         problem = None
-        for pd in problems:
+        for i, pd in enumerate(problems):
             if len(pd["agents"]["start_positions"]) == args.num_robots:
                 problem = Problem.from_json(pd, type="numpy")
+                problem.identifier = f"{args.problem_set}_{i}"
                 break
         else:
             raise ValueError(f"No problem found with {args.num_robots} robots.")
 
     else:
         problem = Problem.from_json(problems[0], type="numpy")
+        problem.identifier = f"{args.problem_set}_0"
 
     match args.schedule:
         case "default":
