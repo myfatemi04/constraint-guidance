@@ -2,6 +2,7 @@
 Creates a prior distribution based on visibility graphs.
 """
 
+import heapq
 import json
 from collections import defaultdict
 from typing import cast
@@ -490,8 +491,47 @@ def main_voronoi():
     plt.show()
 
 
+def read_from_parents(parents, goal_vertex_id):
+    path = []
+    current = goal_vertex_id
+    while current in parents:
+        path.append(current)
+        current = parents[current]
+    path.append(current)
+    return list(reversed(path))
+
+
+def astar(graph, vertices, start_vertex_id, goal_vertex_id):
+    # (heuristic, vertex_id)
+    parents = {}
+    queue = [
+        (
+            np.linalg.norm(vertices[start_vertex_id] - vertices[goal_vertex_id]),
+            start_vertex_id,
+        )
+    ]
+    visited = {start_vertex_id}
+    while len(queue) > 0:
+        _, vertex_id = heapq.heappop(queue)
+        if vertex_id == goal_vertex_id:
+            return read_from_parents(parents, goal_vertex_id)
+        for neighbor in graph[vertex_id]:
+            if neighbor in visited:
+                continue
+            visited.add(neighbor)
+            trav_cost = np.linalg.norm(vertices[neighbor] - vertices[vertex_id])
+            heur_remain = np.linalg.norm(vertices[neighbor] - vertices[goal_vertex_id])
+            heapq.heappush(
+                queue,
+                (heur_remain + trav_cost, neighbor),
+            )
+            if neighbor not in parents:
+                parents[neighbor] = vertex_id
+    return None
+
+
 def generate_sample_trajectories():
-    with open("instances_data/instances_shelf.json") as f:
+    with open("instances_data/instances_dense.json") as f:
         data = json.load(f)
 
     problem = Problem.from_json(data[10], "numpy")
@@ -538,14 +578,46 @@ def generate_sample_trajectories():
 
     visualize(problem, plt.gca(), start_markersize=2, end_markersize=2)
 
+    # Relabel the vertices
+    indices = sorted(g.keys())
+    vertices = vor.vertices[indices]
+    vertex_mapping = {indices[i]: i for i in range(len(indices))}
+    g = {
+        vertex_mapping[node]: set(vertex_mapping[neighbor] for neighbor in neighbors)
+        for node, neighbors in g.items()
+    }
+
+    # Add start and goal positions.
+    agent_i = 1
+    v0 = problem.agent_start_positions[agent_i]
+    v1 = problem.agent_end_positions[agent_i]
+    startgoal = np.vstack([v0, v1])
+    closest_to_startgoal = np.argmin(
+        np.linalg.norm(vertices[:, None, :] - startgoal[None, :, :], axis=-1), axis=0
+    )
+    vertices = np.concatenate([vertices, startgoal], axis=0)
+    g[len(vertices) - 2] = {closest_to_startgoal[0]}
+    g[len(vertices) - 1] = {closest_to_startgoal[1]}
+    g[closest_to_startgoal[0]].add(len(vertices) - 2)
+    g[closest_to_startgoal[1]].add(len(vertices) - 1)
+
     # plot graph
     for node in g:
         for neighbor in g[node]:
             plt.plot(
-                [vor.vertices[node, 0], vor.vertices[neighbor, 0]],
-                [vor.vertices[node, 1], vor.vertices[neighbor, 1]],
+                [vertices[node, 0], vertices[neighbor, 0]],
+                [vertices[node, 1], vertices[neighbor, 1]],
                 "k-",
             )
+
+    path = astar(g, vertices, len(vertices) - 2, len(vertices) - 1)
+    if path is not None:
+        plt.plot(
+            vertices[path, 0],
+            vertices[path, 1],
+            "r-",
+            linewidth=2,
+        )
 
     plt.show()
 
