@@ -8,12 +8,15 @@ from typing import cast
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pyvisgraph
+from scipy.spatial import Voronoi
 
 from ael.problem import Problem
+from ael.visualize import visualize
 
 
 def main_pyvisgraph():
+    import pyvisgraph
+
     with open("instances_data/instances_dense.json") as f:
         data = json.load(f)
 
@@ -279,8 +282,6 @@ def main():
 
     pieces = identify_visible_pieces(start_location, list(polygons))
 
-    from ael.visualize import visualize
-
     visualize(problem, plt.gca(), start_markersize=2, end_markersize=2)
 
     visibility_polygons = []
@@ -338,6 +339,44 @@ def main():
 
     plt.scatter(start_location[0], start_location[1], c="g", marker="o")
     plt.show()
+
+
+def get_graph_without_vertices_in_obstacles(
+    vor: Voronoi,
+    obstacle_positions: np.ndarray,
+    obstacle_radii: np.ndarray,
+    agent_radius: float,
+):
+    """creates a graph of points on the Voronoi diagram that are not in the obstacles, as well as trimming tree branches"""
+    graph = defaultdict(set)
+    ok_vertices = (
+        np.linalg.norm(
+            # (v, :, 2) - (:, o, 2) -> (v, o, 2)
+            vor.vertices[:, None, :] - obstacle_positions[None, :, :],
+            axis=-1,
+        )  # (v, o)
+        >= (obstacle_radii + agent_radius)[None, :]
+    ).all(axis=-1)  # (v,)
+
+    for pointidx, simplex in zip(vor.ridge_points, vor.ridge_vertices):
+        simplex = np.asarray(simplex)
+        assert len(simplex) == 2
+        if np.all(simplex >= 0) and ok_vertices[simplex].all():
+            graph[simplex[0]].add(simplex[1])
+            graph[simplex[1]].add(simplex[0])
+
+    return graph
+
+
+def remove_tree_vertices(graph):
+    """if a node is reached which has no *other* children, it is removed from the graph. assumes a connected graph."""
+    rm = [0]
+    while len(rm) > 0:
+        rm = [node for node in graph if len(graph[node]) == 1]
+        for node in rm:
+            neighbor = next(iter(graph[node]))
+            graph[neighbor].remove(node)
+            del graph[node]
 
 
 def voronoi_plot_2d(vor, ax, obstacle_positions, obstacle_radii, **kw):
@@ -431,10 +470,6 @@ def main_voronoi():
 
     all_points = np.array(all_points)
 
-    from scipy.spatial import Voronoi
-
-    from ael.visualize import visualize
-
     visualize(problem, plt.gca(), start_markersize=2, end_markersize=2)
     plt.plot(
         [min_x, max_x, max_x, min_x, min_x], [min_y, min_y, max_y, max_y, min_y], "r-"
@@ -456,10 +491,10 @@ def main_voronoi():
 
 
 def generate_sample_trajectories():
-    with open("instances_data/instances_simple.json") as f:
+    with open("instances_data/instances_shelf.json") as f:
         data = json.load(f)
 
-    problem = Problem.from_json(data[10])
+    problem = Problem.from_json(data[10], "numpy")
 
     polygons = []
     circle_approximation_num_sides = 32
@@ -495,29 +530,25 @@ def generate_sample_trajectories():
 
     all_points = np.array(all_points)
 
-    from scipy.spatial import Voronoi
-
-    from ael.visualize import visualize
+    vor = Voronoi(all_points)
+    g = get_graph_without_vertices_in_obstacles(
+        vor, problem.obstacle_positions, problem.obstacle_radii, problem.agent_radii[0]
+    )
+    remove_tree_vertices(g)
 
     visualize(problem, plt.gca(), start_markersize=2, end_markersize=2)
-    plt.plot(
-        [min_x, max_x, max_x, min_x, min_x], [min_y, min_y, max_y, max_y, min_y], "r-"
-    )
-    vor = Voronoi(all_points)
-    # remove points inside obstacles (just using the radius check)
-    voronoi_plot_2d(
-        vor,
-        plt.gca(),
-        problem.obstacle_positions,
-        problem.obstacle_radii,
-        show_points=False,
-        show_vertices=False,
-    )
-    # adjust ax limits
-    plt.xlim(-2, 2)
-    plt.ylim(-2, 2)
+
+    # plot graph
+    for node in g:
+        for neighbor in g[node]:
+            plt.plot(
+                [vor.vertices[node, 0], vor.vertices[neighbor, 0]],
+                [vor.vertices[node, 1], vor.vertices[neighbor, 1]],
+                "k-",
+            )
+
     plt.show()
 
 
 if __name__ == "__main__":
-    main_voronoi()
+    generate_sample_trajectories()
