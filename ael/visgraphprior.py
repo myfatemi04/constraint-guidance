@@ -530,6 +530,53 @@ def astar(graph, vertices, start_vertex_id, goal_vertex_id):
     return None
 
 
+def topk_shortest_paths(graph, vertices, start_vertex_id, goal_vertex_id, k):
+    # identifies the top k paths from start to goal. maybe this is actually done more effectively with Dijkstra.
+    import networkx as nx
+
+    G = nx.Graph()
+    for node, neighbors in graph.items():
+        for neighbor in neighbors:
+            G.add_edge(
+                node,
+                neighbor,
+                weight=np.linalg.norm(vertices[neighbor] - vertices[node]),
+            )
+    results = []
+    for i, path in enumerate(
+        nx.shortest_simple_paths(G, start_vertex_id, goal_vertex_id, weight="weight")
+    ):
+        if i >= k:
+            break
+        length = (
+            sum(G[path[j]][path[j + 1]]["weight"] for j in range(len(path) - 1))
+            if len(path) > 1
+            else 0
+        )
+        results.append((path, length))
+    return results
+
+
+def create_interpolated_path(vertices, path, dt, speed):
+    """Assumes caller has ensured total_length <= dt * speed"""
+    points = []
+    total_time = 0
+    for i in range(len(path) - 1):
+        start_vertex = vertices[path[i]]
+        end_vertex = vertices[path[i + 1]]
+        segment_length = np.linalg.norm(end_vertex - start_vertex)
+        segment_time = segment_length / speed
+        total_time += segment_time
+        num_points_in_segment = int((total_time - len(points) * dt) / dt)
+        if num_points_in_segment > 0:
+            segment = np.linspace(
+                start_vertex, end_vertex, num_points_in_segment, endpoint=False
+            )
+            points.extend(segment)
+    points.append(vertices[path[-1]])
+    return np.array(points)
+
+
 def generate_sample_trajectories():
     with open("instances_data/instances_dense.json") as f:
         data = json.load(f)
@@ -610,14 +657,31 @@ def generate_sample_trajectories():
                 "k-",
             )
 
-    path = astar(g, vertices, len(vertices) - 2, len(vertices) - 1)
-    if path is not None:
+    topk_paths = topk_shortest_paths(
+        g, vertices, len(vertices) - 2, len(vertices) - 1, k=5
+    )
+
+    for path, length in topk_paths:
         plt.plot(
             vertices[path, 0],
             vertices[path, 1],
-            "r-",
+            "-",
             linewidth=2,
+            label=f"length {length:.2f}",
         )
+
+    plt.show()
+
+    speed = 0.05
+    dt = 1.0
+    num_points = 64
+
+    for path, length in topk_paths:
+        traj = create_interpolated_path(vertices, path, dt, speed)
+        traj_points = np.zeros((num_points, 2))
+        traj_points[: len(traj)] = traj
+        traj_points[len(traj) :] = traj[-1]
+        plt.plot(traj_points[:, 0], traj_points[:, 1], "-o", markersize=2)
 
     plt.show()
 
