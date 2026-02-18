@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
+from loguru import logger
 
 from ael.constraint_evaluation import (
     ConstraintSatisfaction,
@@ -21,6 +22,7 @@ from ael.score_function import (
     compute_score_mppi_factorized,
     compute_score_mppi_unfactorized,
 )
+from ael.visgraphprior import generate_paths, interpolate, make_roadmap
 
 
 @dataclass
@@ -75,6 +77,7 @@ class ScoreComputationMethod(str, enum.Enum):
     UNFACTORIZED_MPPI = "unfactorized_mppi"
     FACTORIZED_MPPI = "factorized_mppi"
     BOUNDARY_INTEGRALS = "boundary_integrals"
+    VORONOI_GUIDANCE = "voronoi_guidance"
 
 
 DEFAULT_SCHEDULE_APPROXIMATE_V0 = [
@@ -127,6 +130,7 @@ DEFAULT_SCHEDULES: dict[ScoreComputationMethod, list[ScheduleEntry]] = {
     ScoreComputationMethod.UNFACTORIZED_MPPI: DEFAULT_SCHEDULE_MPPI,
     ScoreComputationMethod.FACTORIZED_MPPI: DEFAULT_SCHEDULE_MPPI,
     ScoreComputationMethod.BOUNDARY_INTEGRALS: DEFAULT_SCHEDULE_BOUNDARY_INTEGRALS,
+    ScoreComputationMethod.VORONOI_GUIDANCE: DEFAULT_SCHEDULE_BOUNDARY_INTEGRALS,
 }
 
 
@@ -179,10 +183,47 @@ def solve(
 
     t0 = time.time()
 
+    if score_computation_method == ScoreComputationMethod.VORONOI_GUIDANCE:
+        graph, vertices = make_roadmap(problem)
+        target_paths_by_agent = []
+        for agent_index in range(problem.num_agents):
+            paths = generate_paths(
+                graph,
+                vertices,
+                start_positions[agent_index],
+                end_positions[agent_index],
+                num_paths=5,
+            )
+            paths_interpolated = []
+            for path in paths:
+                interpolated = interpolate(
+                    path, dt=1.0, speed=problem.agent_max_speeds[agent_index]
+                )
+                interpolated_path_timesteps = interpolated.shape[0]
+                if interpolated_path_timesteps > problem.num_timesteps:
+                    continue
+
+                path = np.zeros((problem.num_timesteps, 2))
+                path[:interpolated_path_timesteps] = interpolated
+                path[interpolated_path_timesteps:] = interpolated[-1]
+                paths_interpolated.append(path)
+
+            if len(paths_interpolated) == 0:
+                logger.warning("")
+                path = np.linspace(
+                    start_positions[agent_index],
+                    end_positions[agent_index],
+                    num=problem.num_timesteps,
+                )
+                paths_interpolated.append(path)
+            target_paths_by_agent.append(paths_interpolated)
+    else:
+        target_paths_by_agent = None
+
     for schedule_entry in schedule:
         print(schedule_entry)
 
-        for i in range(schedule_entry.num_steps):
+        for agent_index in range(schedule_entry.num_steps):
             match score_computation_method:
                 case ScoreComputationMethod.APPROXIMATE_V0:
                     score = compute_score(
@@ -215,8 +256,43 @@ def solve(
                         problem=problem,
                         sigma=schedule_entry.sigma,
                         obstacle_boundaries=obstacle_boundaries,
+                        include_kinetic=True,
                         **(schedule_entry.score_fn_kwargs or {}),
                     )
+                case ScoreComputationMethod.VORONOI_GUIDANCE:
+                    score = compute_score_from_boundary_integrals(
+                        trajectory,
+                        problem=problem,
+                        sigma=schedule_entry.sigma,
+                        obstacle_boundaries=obstacle_boundaries,
+                        include_kinetic=True,
+                        **(schedule_entry.score_fn_kwargs or {}),
+                    )
+                    # add Voronoi guidance
+                    assert target_paths_by_agent is not None
+                    for agent_index in range(problem.num_agents):
+                        target_paths = target_paths_by_agent[agent_index]
+                        logprobs = []
+                        for path in target_paths:
+                            # compute distance from current trajectory to path
+                            l2 = np.linalg.norm(trajectory[:, agent_index, :] - path)
+                            logprobs.append(
+                                -(l2**2)
+                                / (2.0 * schedule_entry.sigma**2 * trajectory.shape[0])
+                            )
+                        logprobs = np.array(logprobs)
+                        # compute softmax over target trajectories
+                        max_logprob = np.max(logprobs)
+                        weights = np.exp(logprobs - max_logprob)
+                        weights /= np.sum(weights)
+                        # compute weighted average of paths
+                        weighted_path = np.zeros_like(trajectory[:, agent_index, :])
+                        for weight, path in zip(weights, target_paths):
+                            weighted_path += weight * path
+                        # compute score to move towards weighted path
+                        score[:, agent_index, :] += (
+                            weighted_path - trajectory[:, agent_index, :]
+                        ) * 0.01
 
             beta1_t *= optimizer_options.beta1
             beta2_t *= optimizer_options.beta2

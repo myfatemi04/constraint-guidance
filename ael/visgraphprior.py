@@ -8,6 +8,7 @@ from collections import defaultdict
 from typing import cast
 
 import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
 from scipy.spatial import Voronoi
 
@@ -342,7 +343,7 @@ def main():
     plt.show()
 
 
-def get_graph_without_vertices_in_obstacles(
+def _get_graph_without_vertices_in_obstacles(
     vor: Voronoi,
     obstacle_positions: np.ndarray,
     obstacle_radii: np.ndarray,
@@ -369,7 +370,7 @@ def get_graph_without_vertices_in_obstacles(
     return graph
 
 
-def remove_tree_vertices(graph):
+def _remove_tree_vertices(graph):
     """if a node is reached which has no *other* children, it is removed from the graph. assumes a connected graph."""
     rm = [0]
     while len(rm) > 0:
@@ -380,7 +381,7 @@ def remove_tree_vertices(graph):
             del graph[node]
 
 
-def voronoi_plot_2d(vor, ax, obstacle_positions, obstacle_radii, **kw):
+def _voronoi_plot_2d(vor, ax, obstacle_positions, obstacle_radii, **kw):
     """
     From scipy
     """
@@ -431,12 +432,14 @@ def voronoi_plot_2d(vor, ax, obstacle_positions, obstacle_radii, **kw):
     return ax.figure
 
 
-def main_voronoi():
-    with open("instances_data/instances_simple.json") as f:
-        data = json.load(f)
-
-    problem = Problem.from_json(data[10])
-
+def _create_voronoi_polygon(
+    problem: Problem,
+    circle_approximation_num_sides: int,
+    min_x=-1.5,
+    max_x=1.5,
+    min_y=-1.5,
+    max_y=1.5,
+) -> np.ndarray:
     polygons = []
     circle_approximation_num_sides = 32
 
@@ -460,16 +463,26 @@ def main_voronoi():
     for polygon in polygons:
         all_points.extend(polygon)
 
-    min_x = -1.5
-    max_x = 1.5
-    min_y = -1.5
-    max_y = 1.5
     all_points.extend(np.array([max_x * np.ones(32), np.linspace(min_y, max_y, 32)]).T)
     all_points.extend(np.array([min_x * np.ones(32), np.linspace(min_y, max_y, 32)]).T)
     all_points.extend(np.array([np.linspace(min_x, max_x, 32), max_y * np.ones(32)]).T)
     all_points.extend(np.array([np.linspace(min_x, max_x, 32), min_y * np.ones(32)]).T)
 
     all_points = np.array(all_points)
+    return all_points
+
+
+def main_voronoi():
+    with open("instances_data/instances_simple.json") as f:
+        data = json.load(f)
+
+    problem = Problem.from_json(data[10])
+
+    min_x = -1.5
+    max_x = 1.5
+    min_y = -1.5
+    max_y = 1.5
+    all_points = _create_voronoi_polygon(problem, 32, min_x, max_x, min_y, max_y)
 
     visualize(problem, plt.gca(), start_markersize=2, end_markersize=2)
     plt.plot(
@@ -477,7 +490,7 @@ def main_voronoi():
     )
     vor = Voronoi(all_points)
     # remove points inside obstacles (just using the radius check)
-    voronoi_plot_2d(
+    _voronoi_plot_2d(
         vor,
         plt.gca(),
         problem.obstacle_positions,
@@ -515,7 +528,7 @@ def astar(graph, vertices, start_vertex_id, goal_vertex_id):
         _, vertex_id = heapq.heappop(queue)
         if vertex_id == goal_vertex_id:
             return read_from_parents(parents, goal_vertex_id)
-        for neighbor in graph[vertex_id]:
+        for neighbor in graph.neighbors(vertex_id):
             if neighbor in visited:
                 continue
             visited.add(neighbor)
@@ -530,40 +543,33 @@ def astar(graph, vertices, start_vertex_id, goal_vertex_id):
     return None
 
 
-def topk_shortest_paths(graph, vertices, start_vertex_id, goal_vertex_id, k):
-    # identifies the top k paths from start to goal. maybe this is actually done more effectively with Dijkstra.
-    import networkx as nx
-
-    G = nx.Graph()
-    for node, neighbors in graph.items():
-        for neighbor in neighbors:
-            G.add_edge(
-                node,
-                neighbor,
-                weight=np.linalg.norm(vertices[neighbor] - vertices[node]),
-            )
+def topk_shortest_paths(
+    graph: nx.Graph, start_vertex_id, goal_vertex_id, k
+) -> list[np.ndarray]:
+    # Graph is already a NetworkX graph with weights
     results = []
     for i, path in enumerate(
-        nx.shortest_simple_paths(G, start_vertex_id, goal_vertex_id, weight="weight")
+        nx.shortest_simple_paths(
+            graph, start_vertex_id, goal_vertex_id, weight="weight"
+        )
     ):
         if i >= k:
             break
-        length = (
-            sum(G[path[j]][path[j + 1]]["weight"] for j in range(len(path) - 1))
-            if len(path) > 1
-            else 0
+
+        results.append(
+            np.array([graph.nodes[path[index]]["pos"] for index in range(len(path))])
         )
-        results.append((path, length))
+
     return results
 
 
-def create_interpolated_path(vertices, path, dt, speed):
+def interpolate(path: np.ndarray, dt, speed):
     """Assumes caller has ensured total_length <= dt * speed"""
     points = []
     total_time = 0
     for i in range(len(path) - 1):
-        start_vertex = vertices[path[i]]
-        end_vertex = vertices[path[i + 1]]
+        start_vertex = path[i]
+        end_vertex = path[i + 1]
         segment_length = np.linalg.norm(end_vertex - start_vertex)
         segment_time = segment_length / speed
         total_time += segment_time
@@ -573,98 +579,118 @@ def create_interpolated_path(vertices, path, dt, speed):
                 start_vertex, end_vertex, num_points_in_segment, endpoint=False
             )
             points.extend(segment)
-    points.append(vertices[path[-1]])
+    points.append(path[-1])
     return np.array(points)
 
 
-def generate_sample_trajectories():
+def _get_voronoi_graph(problem: Problem, voronoi: Voronoi):
+    dict_graph = _get_graph_without_vertices_in_obstacles(
+        voronoi,
+        problem.obstacle_positions,
+        problem.obstacle_radii,
+        problem.agent_radii[0],
+    )
+    _remove_tree_vertices(dict_graph)
+
+    # Relabel the vertices after filtration.
+    indices = sorted(dict_graph.keys())
+    vertices = voronoi.vertices[indices]
+    vertex_mapping = {indices[i]: i for i in range(len(indices))}
+
+    # Create NetworkX graph
+    graph = nx.Graph()
+    for node_id, neighbors in dict_graph.items():
+        mapped_node_id = vertex_mapping[node_id]
+        graph.add_node(mapped_node_id, pos=vertices[mapped_node_id])
+        for neighbor in neighbors:
+            mapped_neighbor = vertex_mapping[neighbor]
+            # Add edge with weight as euclidean distance
+            weight = np.linalg.norm(
+                vertices[mapped_node_id] - vertices[mapped_neighbor]
+            )
+            graph.add_edge(mapped_node_id, mapped_neighbor, weight=weight)
+
+    return graph, vertices
+
+
+def make_roadmap(problem: Problem, circle_approximation_num_sides: int = 32):
+    """Generates sample trajectories, using num_trajectories for each agent."""
+    all_points = _create_voronoi_polygon(problem, circle_approximation_num_sides)
+    vor = Voronoi(all_points)
+    graph, vertices = _get_voronoi_graph(problem, vor)
+    return graph, vertices
+
+
+def generate_paths(graph, vertices, start_position, end_position, num_paths):
+    # Create a copy of the graph to avoid modifying the original
+    graph_copy = graph.copy()
+
+    start_and_goal = np.vstack([start_position, end_position])
+    closest_to_start_id, closest_to_goal_id = np.argmin(
+        np.linalg.norm(vertices[:, None, :] - start_and_goal[None, :, :], axis=-1),
+        axis=0,
+    )
+
+    # Create extended vertices array with start and goal positions
+    extended_vertices = np.concatenate([vertices, start_and_goal], axis=0)
+    start_id = len(vertices)
+    goal_id = len(vertices) + 1
+
+    # Add start and goal nodes to the graph copy
+    graph_copy.add_node(start_id, pos=start_position)
+    graph_copy.add_node(goal_id, pos=end_position)
+
+    # Add temporary edges to connect start and goal to the roadmap
+    start_weight = np.linalg.norm(
+        extended_vertices[start_id] - extended_vertices[closest_to_start_id]
+    )
+    goal_weight = np.linalg.norm(
+        extended_vertices[goal_id] - extended_vertices[closest_to_goal_id]
+    )
+
+    graph_copy.add_edge(start_id, closest_to_start_id, weight=start_weight)
+    graph_copy.add_edge(goal_id, closest_to_goal_id, weight=goal_weight)
+
+    # Find paths on the extended graph
+    topk_paths = topk_shortest_paths(graph_copy, start_id, goal_id, k=5)
+
+    return topk_paths
+
+
+def generate_sample_trajectories_demo():
     with open("instances_data/instances_dense.json") as f:
         data = json.load(f)
 
     problem = Problem.from_json(data[10], "numpy")
 
-    polygons = []
-    circle_approximation_num_sides = 32
-
-    for obstacle_i in range(problem.num_obstacles):
-        x, y = problem.obstacle_positions[obstacle_i]
-        r = problem.obstacle_radii[obstacle_i] + problem.agent_radii[0]
-        polygons.append(
-            np.array(
-                [
-                    [
-                        x + r * np.cos(j * 2 * np.pi / circle_approximation_num_sides),
-                        y + r * np.sin(j * 2 * np.pi / circle_approximation_num_sides),
-                    ]
-                    for j in range(circle_approximation_num_sides)
-                ]
-            )
-        )
-
-    # Note: order here must be counter clockwise to represent the flipped orientation.
-    all_points = []
-    for polygon in polygons:
-        all_points.extend(polygon)
-
-    min_x = -1.5
-    max_x = 1.5
-    min_y = -1.5
-    max_y = 1.5
-    all_points.extend(np.array([max_x * np.ones(32), np.linspace(min_y, max_y, 32)]).T)
-    all_points.extend(np.array([min_x * np.ones(32), np.linspace(min_y, max_y, 32)]).T)
-    all_points.extend(np.array([np.linspace(min_x, max_x, 32), max_y * np.ones(32)]).T)
-    all_points.extend(np.array([np.linspace(min_x, max_x, 32), min_y * np.ones(32)]).T)
-
-    all_points = np.array(all_points)
-
-    vor = Voronoi(all_points)
-    g = get_graph_without_vertices_in_obstacles(
-        vor, problem.obstacle_positions, problem.obstacle_radii, problem.agent_radii[0]
-    )
-    remove_tree_vertices(g)
+    graph, vertices = make_roadmap(problem)
 
     visualize(problem, plt.gca(), start_markersize=2, end_markersize=2)
-
-    # Relabel the vertices
-    indices = sorted(g.keys())
-    vertices = vor.vertices[indices]
-    vertex_mapping = {indices[i]: i for i in range(len(indices))}
-    g = {
-        vertex_mapping[node]: set(vertex_mapping[neighbor] for neighbor in neighbors)
-        for node, neighbors in g.items()
-    }
 
     # Add start and goal positions.
     agent_i = 1
     v0 = problem.agent_start_positions[agent_i]
     v1 = problem.agent_end_positions[agent_i]
-    startgoal = np.vstack([v0, v1])
-    closest_to_startgoal = np.argmin(
-        np.linalg.norm(vertices[:, None, :] - startgoal[None, :, :], axis=-1), axis=0
-    )
-    vertices = np.concatenate([vertices, startgoal], axis=0)
-    g[len(vertices) - 2] = {closest_to_startgoal[0]}
-    g[len(vertices) - 1] = {closest_to_startgoal[1]}
-    g[closest_to_startgoal[0]].add(len(vertices) - 2)
-    g[closest_to_startgoal[1]].add(len(vertices) - 1)
 
     # plot graph
-    for node in g:
-        for neighbor in g[node]:
+    for node in graph.nodes():
+        for neighbor in graph.neighbors(node):
             plt.plot(
                 [vertices[node, 0], vertices[neighbor, 0]],
                 [vertices[node, 1], vertices[neighbor, 1]],
                 "k-",
             )
 
-    topk_paths = topk_shortest_paths(
-        g, vertices, len(vertices) - 2, len(vertices) - 1, k=5
-    )
+    # Use generate_paths to properly handle start and goal positions
+    topk_paths = generate_paths(graph, vertices, v0, v1, num_paths=5)
+
+    # Create extended vertices for plotting (same as in generate_paths)
+    extended_vertices = np.concatenate([vertices, np.vstack([v0, v1])], axis=0)
 
     for path, length in topk_paths:
         plt.plot(
-            vertices[path, 0],
-            vertices[path, 1],
+            extended_vertices[path, 0],
+            extended_vertices[path, 1],
             "-",
             linewidth=2,
             label=f"length {length:.2f}",
@@ -677,7 +703,7 @@ def generate_sample_trajectories():
     num_points = 64
 
     for path, length in topk_paths:
-        traj = create_interpolated_path(vertices, path, dt, speed)
+        traj = interpolate(path, dt, speed)
         traj_points = np.zeros((num_points, 2))
         traj_points[: len(traj)] = traj
         traj_points[len(traj) :] = traj[-1]
@@ -687,4 +713,4 @@ def generate_sample_trajectories():
 
 
 if __name__ == "__main__":
-    generate_sample_trajectories()
+    generate_sample_trajectories_demo()

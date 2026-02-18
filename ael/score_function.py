@@ -799,6 +799,7 @@ def compute_score_from_boundary_integrals(
     problem: Problem[np.ndarray],
     sigma: float,
     obstacle_boundaries: np.ndarray,
+    include_kinetic: bool,
 ):
     score = np.zeros_like(trajectory)
     for agent_i in range(trajectory.shape[1]):
@@ -881,9 +882,10 @@ def compute_score_from_boundary_integrals(
         score[:, agent_i, :] = obs_feas_score
 
         # Kinetic energy component.
-        mu = (trajectory[2:, agent_i, :] + trajectory[:-2, agent_i, :]) / 2
-        score[1:-1, agent_i, :] += (
-            1 / (1 + sigma**2) * (mu - trajectory[1:-1, agent_i, :])
-        )
+        if include_kinetic:
+            mu = (trajectory[2:, agent_i, :] + trajectory[:-2, agent_i, :]) / 2
+            score[1:-1, agent_i, :] += (
+                1 / (1 + sigma**2) * (mu - trajectory[1:-1, agent_i, :])
+            ) * 0.5
 
     return score
