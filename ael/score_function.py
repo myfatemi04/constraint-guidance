@@ -412,10 +412,10 @@ def compute_score(
     trajectory,
     problem: Problem[np.ndarray],
     sigma,
-    include_obstacles=True,
-    kinetic_weight=10.0,
-    magnitude_clip=1.0,
-    n_integral=200,
+    include_obstacles,
+    kinetic_weight,
+    magnitude_clip,
+    n_integral,
 ):
     """
     Batches across agents and obstacles.

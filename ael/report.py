@@ -89,8 +89,13 @@ if __name__ == "__main__":
         k: f"results/2026-02-24/experiment_08-04-06/{k}/table.csv"
         for k in ["dense", "simple", "shelf", "connected_room"]
     }
+    # better schedule
+    paths_3 = paths_1 | {
+        k: f"results/2026-02-24/experiment_08-26-02/{k}/table.csv"
+        for k in ["dense", "simple", "shelf", "connected_room"]
+    }
 
-    paths = paths_2
+    paths = paths_3
 
     dense_df = pd.read_csv(paths["dense"])
     connected_room_df = pd.read_csv(paths["connected_room"])

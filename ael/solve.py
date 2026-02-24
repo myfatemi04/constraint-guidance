@@ -85,19 +85,13 @@ DEFAULT_SCHEDULE_APPROXIMATE_V0 = [
         sigma=0.01,
         step_size=0.01,
         num_steps=60,
-        score_fn_kwargs=dict(kinetic_weight=50),
+        score_fn_kwargs=dict(kinetic_weight=10, n_integral=16),
     ),
     ScheduleEntry(
         sigma=0.001,
         step_size=0.01,
         num_steps=60,
-        score_fn_kwargs=dict(kinetic_weight=10),
-    ),
-    ScheduleEntry(
-        sigma=0.0001,
-        step_size=0.01,
-        num_steps=60,
-        score_fn_kwargs=dict(kinetic_weight=1),
+        score_fn_kwargs=dict(kinetic_weight=0.1, n_integral=16),
     ),
 ]
 
@@ -183,7 +177,6 @@ def solve(
 
     trajectories = []
 
-    t0 = time.time()
     dt = 1.0
 
     # if score_computation_method == ScoreComputationMethod.VORONOI_GUIDANCE:
@@ -238,13 +231,7 @@ def solve(
     else:
         target_paths_by_agent = None
 
-    t1 = time.time()
-
-    print(t1 - t0)
-
     for schedule_entry in schedule:
-        print(schedule_entry)
-
         for agent_index in range(schedule_entry.num_steps):
             match score_computation_method:
                 case ScoreComputationMethod.APPROXIMATE_V0:
