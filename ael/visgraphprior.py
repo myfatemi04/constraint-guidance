@@ -621,7 +621,9 @@ def make_roadmap(problem: Problem, circle_approximation_num_sides: int = 32):
     return graph, vertices
 
 
-def generate_paths(graph, vertices, start_position, end_position, num_paths):
+def generate_paths(
+    graph, vertices, start_position, end_position, num_paths
+) -> list[np.ndarray]:
     # Create a copy of the graph to avoid modifying the original
     graph_copy = graph.copy()
 
@@ -658,10 +660,10 @@ def generate_paths(graph, vertices, start_position, end_position, num_paths):
 
 
 def generate_sample_trajectories_demo():
-    with open("instances_data/instances_dense.json") as f:
+    with open("instances_data/instances_shelf.json") as f:
         data = json.load(f)
 
-    problem = Problem.from_json(data[10], "numpy")
+    problem = Problem.from_json(data[14], "numpy")
 
     graph, vertices = make_roadmap(problem)
 
@@ -684,17 +686,8 @@ def generate_sample_trajectories_demo():
     # Use generate_paths to properly handle start and goal positions
     topk_paths = generate_paths(graph, vertices, v0, v1, num_paths=5)
 
-    # Create extended vertices for plotting (same as in generate_paths)
-    extended_vertices = np.concatenate([vertices, np.vstack([v0, v1])], axis=0)
-
-    for path, length in topk_paths:
-        plt.plot(
-            extended_vertices[path, 0],
-            extended_vertices[path, 1],
-            "-",
-            linewidth=2,
-            label=f"length {length:.2f}",
-        )
+    for path in topk_paths:
+        plt.plot(path[:, 0], path[:, 1], "-", linewidth=2)
 
     plt.show()
 
@@ -702,8 +695,12 @@ def generate_sample_trajectories_demo():
     dt = 1.0
     num_points = 64
 
-    for path, length in topk_paths:
+    visualize(problem, plt.gca(), start_markersize=2, end_markersize=2)
+
+    for path in topk_paths:
         traj = interpolate(path, dt, speed)
+        if len(traj) > num_points:
+            continue
         traj_points = np.zeros((num_points, 2))
         traj_points[: len(traj)] = traj
         traj_points[len(traj) :] = traj[-1]

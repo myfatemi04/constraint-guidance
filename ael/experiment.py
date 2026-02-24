@@ -10,11 +10,20 @@ import pandas as pd
 import tqdm
 
 from ael.problem import Problem
-from ael.solve import DEFAULT_SCHEDULE, OptimizerOptions, Result, ScheduleEntry, solve
+from ael.solve import (
+    DEFAULT_SCHEDULES,
+    OptimizerOptions,
+    Result,
+    ScheduleEntry,
+    ScoreComputationMethod,
+    solve,
+)
 
 
 @dataclass
 class MainArgs:
+    score_computation_method: ScoreComputationMethod
+
     problem_set: str = "dense"
     """ Loads problems from `./instances_data/instances_{problem_set}.json`. """
 
@@ -41,7 +50,7 @@ def main(args: MainArgs):
     problems = [Problem.from_json(d, type="numpy") for d in data]
 
     if args.schedule == "default":
-        schedule = DEFAULT_SCHEDULE
+        schedule = DEFAULT_SCHEDULES[args.score_computation_method]
     else:
         schedule_path = Path(args.schedule)
         if not schedule_path.exists():
@@ -87,7 +96,15 @@ def main(args: MainArgs):
             if args.num_robots != "any" and problem.num_agents != args.num_robots:
                 continue
 
-            futures.append(executor.submit(solve, problem, schedule=schedule))
+            futures.append(
+                executor.submit(
+                    solve,
+                    problem,
+                    args.score_computation_method,
+                    args.optimizer,
+                    schedule=schedule,
+                )
+            )
 
         for future in tqdm.tqdm(as_completed(futures), total=len(futures)):
             result = cast(Result, future.result())
