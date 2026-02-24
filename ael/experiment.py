@@ -93,7 +93,8 @@ def run_problem_set(args: MainArgs, problem_set: str, save_dir: Path):
         with open(save_dir / "optimizer.json", "w") as f:
             json.dump(args.optimizer.__dict__, f, indent=4)
 
-        for problem in problems:
+        for i, problem in enumerate(problems):
+            problem.identifier = f"{problem_set}_{i}"
             if args.num_robots != "any" and problem.num_agents != args.num_robots:
                 continue
 

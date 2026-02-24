@@ -84,8 +84,13 @@ if __name__ == "__main__":
         "shelf": "results/2026-02-24/experiment_07-36-12_shelf_num_robots=any/table.csv",
         "simple": "results/2026-02-24/experiment_07-39-32_simple_num_robots=any/table.csv",
     }
+    # with Voronoi initialization and better schedule
+    paths_2 = paths_1 | {
+        k: f"results/2026-02-24/experiment_08-04-06/{k}/table.csv"
+        for k in ["dense", "simple", "shelf", "connected_room"]
+    }
 
-    paths = paths_0
+    paths = paths_2
 
     dense_df = pd.read_csv(paths["dense"])
     connected_room_df = pd.read_csv(paths["connected_room"])
