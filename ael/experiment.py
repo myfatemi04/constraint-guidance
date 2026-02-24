@@ -25,7 +25,7 @@ class MainArgs:
     score_computation_method: ScoreComputationMethod
 
     problem_set: str = "dense"
-    """ Loads problems from `./instances_data/instances_{problem_set}.json`. """
+    """ Loads problems from `./instances_data/instances_{problem_set}.json`. Can be comma-separated list. """
 
     num_robots: int | Literal["any"] = "any"
     """ If specified, selects only problems with this many robots. """
@@ -39,12 +39,25 @@ class MainArgs:
     save_dir: str = "./results/{date}/experiment_{time}"
     """ Path to a directory in which to save results. Allows formatting with `date` and `time` variables, which are formatted as YYYY-mm-dd and HH-MM-SS, respectively. """
 
-    label: str | None = "{problem_set}_num_robots={num_robots}"
+    label: str | None = "{problem_set}"
     """ Label to attach to this experiment. Gets appended to the save directory if specified. Can use the {problem_set} and {num_robots} variables. If None, no label is used. """
 
 
 def main(args: MainArgs):
-    with open(f"instances_data/instances_{args.problem_set}.json", "r") as f:
+    save_dir = Path(
+        args.save_dir.format(
+            date=time.strftime("%Y-%m-%d"), time=time.strftime("%H-%M-%S")
+        )
+    )
+    for problem_set in args.problem_set.split(","):
+        args.problem_set = problem_set
+        run_problem_set(args, problem_set, save_dir / problem_set)
+
+
+def run_problem_set(args: MainArgs, problem_set: str, save_dir: Path):
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    with open(f"instances_data/instances_{problem_set}.json", "r") as f:
         data = json.load(f)
 
     problems = [Problem.from_json(d, type="numpy") for d in data]
@@ -60,18 +73,6 @@ def main(args: MainArgs):
             schedule_json = json.load(f)
 
         schedule = [ScheduleEntry(**entry_dict) for entry_dict in schedule_json]
-
-    save_dir = Path(
-        args.save_dir.format(
-            date=time.strftime("%Y-%m-%d"), time=time.strftime("%H-%M-%S")
-        )
-        + (
-            f"_{args.label.format(problem_set=args.problem_set, num_robots=args.num_robots)}"
-            if args.label is not None
-            else ""
-        )
-    )
-    save_dir.mkdir(parents=True, exist_ok=True)
 
     data = {
         "energy": [],

@@ -91,6 +91,8 @@ def compute_obstacle_boundaries(problem: Problem[np.ndarray]) -> np.ndarray:
     )
     # (o, s)
     angles = [np.sort(a[~np.isnan(a)]) for a in angles]
+    # If an obstacle doesn't intersect with any others, use placeholder of 0
+    angles = [a if len(a) > 0 else np.array([0.0]) for a in angles]
     # (o, s, 2) corresponding to start and end thetas for each surface.
     spans = [
         np.stack([a, np.array([*a[1:], a[0] + 2 * np.pi])], axis=-1) for a in angles

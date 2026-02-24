@@ -17,7 +17,7 @@ def generate_constraint_satisfaction_figure(
         plt.title(f"{num_robots} Robots, {title}")
 
         for i_constraint_type, constraint_type in enumerate(
-            ["agent_obstacle", "agent_agent"]
+            ["agent_obstacle", "agent_agent", "velocity"]
         ):
             tolerance_results = []
 
@@ -70,20 +70,27 @@ def generate_simple_latex_table(
 
 
 if __name__ == "__main__":
-    dense_df = pd.read_csv(
-        "results/2026-01-29/experiment_16-18-37_dense_num_robots=any/table.csv"
-    )
-    connected_room_df = pd.read_csv(
-        # "results/2026-01-29/experiment_16-25-41_connected_room_num_robots=any/table.csv"
-        "results/2026-01-30/experiment_13-32-20_connected_room_num_robots=any/table.csv"
-    )
-    shelf_df = pd.read_csv(
-        "results/2026-01-30/experiment_13-27-10_shelf_num_robots=any/table.csv"
-        # "results/2026-01-29/experiment_16-27-56_shelf_num_robots=any/table.csv"
-    )
-    simple_df = pd.read_csv(
-        "results/2026-01-29/experiment_16-44-37_simple_num_robots=any/table.csv"
-    )
+    # without Voronoi initialization
+    paths_0 = {
+        "dense": "results/2026-01-29/experiment_16-18-37_dense_num_robots=any/table.csv",
+        "connected_room": "results/2026-01-30/experiment_13-32-20_connected_room_num_robots=any/table.csv",
+        "shelf": "results/2026-01-30/experiment_13-27-10_shelf_num_robots=any/table.csv",
+        "simple": "results/2026-01-29/experiment_16-44-37_simple_num_robots=any/table.csv",
+    }
+    # with Voronoi initialization
+    paths_1 = {
+        "connected_room": "results/2026-02-24/experiment_07-22-43_connected_room_num_robots=any/table.csv",
+        "dense": "results/2026-02-24/experiment_07-31-38_dense_num_robots=any/table.csv",
+        "shelf": "results/2026-02-24/experiment_07-36-12_shelf_num_robots=any/table.csv",
+        "simple": "results/2026-02-24/experiment_07-39-32_simple_num_robots=any/table.csv",
+    }
+
+    paths = paths_0
+
+    dense_df = pd.read_csv(paths["dense"])
+    connected_room_df = pd.read_csv(paths["connected_room"])
+    shelf_df = pd.read_csv(paths["shelf"])
+    simple_df = pd.read_csv(paths["simple"])
     figures_dir = Path("figures")
     figures_dir.mkdir(parents=True, exist_ok=True)
     df_and_title = [
@@ -100,20 +107,29 @@ if __name__ == "__main__":
             / f"constraint_satisfaction_{title.lower().replace(' ', '_')}.png"
         )
 
-    # Generate table of solve times, in LaTeX.
-    solve_time = {
-        "Problem Set": [t for (d, t) in df_and_title],
-        "3 agents": [
-            d[d["num_robots"] == 3]["solve_time"].mean() for (d, t) in df_and_title
-        ],
-        "6 agents": [
-            d[d["num_robots"] == 6]["solve_time"].mean() for (d, t) in df_and_title
-        ],
-        "9 agents": [
-            d[d["num_robots"] == 9]["solve_time"].mean() for (d, t) in df_and_title
-        ],
-    }
+    # Create table for success rate with tolerance of 1e-3.
+    for df, _ in df_and_title:
+        df["overall_success"] = (
+            (df["agent_obstacle_max_residual"] < 1e-3)
+            & (df["agent_agent_max_residual"] < 1e-3)
+            & (df["velocity_max_residual"] < 1e-3)
+        )
 
-    pd.DataFrame(solve_time).to_latex(
-        figures_dir / "average_solve_times.tex", index=False
-    )
+    for key in ["overall_success", "solve_time"]:
+        # Generate table of solve times, in LaTeX.
+        table_data = {
+            "Problem Set": [t for (d, t) in df_and_title],
+            "3 agents": [
+                d[d["num_robots"] == 3][key].mean() for (d, t) in df_and_title
+            ],
+            "6 agents": [
+                d[d["num_robots"] == 6][key].mean() for (d, t) in df_and_title
+            ],
+            "9 agents": [
+                d[d["num_robots"] == 9][key].mean() for (d, t) in df_and_title
+            ],
+        }
+
+        pd.DataFrame(table_data).to_latex(
+            figures_dir / f"average_{key}.tex", index=False
+        )

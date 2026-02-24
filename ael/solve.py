@@ -127,6 +127,7 @@ def solve(
     initial_trajectory: np.ndarray | None = None,
     identifier: str | None = None,
 ) -> Result:
+    t0 = time.time()
     if schedule is None:
         schedule = DEFAULT_SCHEDULES[score_computation_method]
 
@@ -162,7 +163,11 @@ def solve(
     beta1_t = 1.0
     beta2_t = 1.0
 
-    obstacle_boundaries = compute_obstacle_boundaries(problem)
+    if score_computation_method in [
+        ScoreComputationMethod.VORONOI_GUIDANCE,
+        ScoreComputationMethod.BOUNDARY_INTEGRALS,
+    ]:
+        obstacle_boundaries = compute_obstacle_boundaries(problem)
 
     trajectories = []
 
@@ -220,6 +225,10 @@ def solve(
             trajectory[:, agent_index, :] = target_paths_by_agent[agent_index][0]
     else:
         target_paths_by_agent = None
+
+    t1 = time.time()
+
+    print(t1 - t0)
 
     for schedule_entry in schedule:
         print(schedule_entry)
