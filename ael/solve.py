@@ -87,6 +87,18 @@ DEFAULT_SCHEDULE_APPROXIMATE_V0 = [
         num_steps=60,
         score_fn_kwargs=dict(kinetic_weight=50),
     ),
+    ScheduleEntry(
+        sigma=0.001,
+        step_size=0.01,
+        num_steps=60,
+        score_fn_kwargs=dict(kinetic_weight=10),
+    ),
+    ScheduleEntry(
+        sigma=0.0001,
+        step_size=0.01,
+        num_steps=60,
+        score_fn_kwargs=dict(kinetic_weight=1),
+    ),
 ]
 
 DEFAULT_SCHEDULE_MPPI = [

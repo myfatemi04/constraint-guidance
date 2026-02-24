@@ -20,7 +20,7 @@ def clip_magnitude(vector, max_magnitude):
 
 
 # TODO: Remove in favor of the batched version.
-def compute_agent_obstacle_score_unbatched(
+def compute_agent_obstacle_score(
     agent_x,
     agent_y,
     obs_x,
@@ -110,7 +110,7 @@ def compute_agent_obstacle_score_unbatched(
     return score
 
 
-def compute_agent_obstacle_distance(
+def compute_agent_obstacle_distance_batched(
     agent_x_B: np.ndarray,
     agent_y_B: np.ndarray,
     obs_x_B: np.ndarray,
@@ -120,7 +120,7 @@ def compute_agent_obstacle_distance(
     return d_a_o_B
 
 
-def compute_r1_r2(obs_rad_B: np.ndarray, d_a_o_B: np.ndarray):
+def compute_r1_r2_batched(obs_rad_B: np.ndarray, d_a_o_B: np.ndarray):
     temp0 = np.abs(d_a_o_B - obs_rad_B)
     temp1 = np.abs(d_a_o_B + obs_rad_B)
     r1_B = np.minimum(temp0, temp1)
@@ -128,7 +128,7 @@ def compute_r1_r2(obs_rad_B: np.ndarray, d_a_o_B: np.ndarray):
     return (r1_B, r2_B)
 
 
-def compute_agent_obstacle_score_batched_helper(
+def compute_agent_obstacle_score_batched(
     agent_x_B: np.ndarray,
     agent_y_B: np.ndarray,
     obs_x_B: np.ndarray,
@@ -136,8 +136,6 @@ def compute_agent_obstacle_score_batched_helper(
     obs_rad_B: np.ndarray,
     sigma_B: np.ndarray,
     n_integral=10,
-    denominator_threshold=0.01,
-    numerator_threshold=0.01,
 ):
     """
     Here, 'B' indicates the batch dimension, 'D' indicates the spatial dimension, and 'T' indicates
@@ -147,8 +145,10 @@ def compute_agent_obstacle_score_batched_helper(
     so that they do not need to be recomputed.
     """
 
-    d_a_o_B = compute_agent_obstacle_distance(agent_x_B, agent_y_B, obs_x_B, obs_y_B)
-    r1_B, r2_B = compute_r1_r2(obs_rad_B, d_a_o_B)
+    d_a_o_B = compute_agent_obstacle_distance_batched(
+        agent_x_B, agent_y_B, obs_x_B, obs_y_B
+    )
+    r1_B, r2_B = compute_r1_r2_batched(obs_rad_B, d_a_o_B)
 
     # Batch on last dimension to make broadcasting easier.
     r_values_T_B = (
@@ -168,7 +168,7 @@ def compute_agent_obstacle_score_batched_helper(
     denominator_first_int_B[d_a_o_B < obs_rad_B] = 0
 
     denominator_B = denominator_first_int_B + denominator_third_int_B
-    denominator_mask = denominator_B < (1 - denominator_threshold)
+    denominator_mask = denominator_B < 0.98
 
     # Save compute by only computing denominator where it is needed.
     denominator_B[denominator_mask] += (
@@ -195,7 +195,7 @@ def compute_agent_obstacle_score_batched_helper(
     numerator_magnitude_bound_B = (
         (r2_B - r1_B) * 2 / np.pi * numerator_magnitude_bound_B
     )
-    numerator_mask = (numerator_magnitude_bound_B / denominator_B) > numerator_threshold
+    numerator_mask = (numerator_magnitude_bound_B / denominator_B) > 1e-2
     numerator_B = np.zeros_like(denominator_B)
 
     intersection_eps_y_T_B = np.sqrt(
@@ -270,7 +270,7 @@ def compute_score_unbatched(
                     obs_rad = problem.obstacle_radii[obs_idx]
 
                     score[t, agent] += clip_magnitude(
-                        compute_agent_obstacle_score_unbatched(
+                        compute_agent_obstacle_score(
                             agent_x,
                             agent_y,
                             obs_x,
@@ -288,7 +288,7 @@ def compute_score_unbatched(
                     other_agent_y = trajectory[t, other_agent, 1]
 
                     score[t, agent] += clip_magnitude(
-                        compute_agent_obstacle_score_unbatched(
+                        compute_agent_obstacle_score(
                             agent_x,
                             agent_y,
                             other_agent_x,
@@ -305,109 +305,6 @@ def compute_score_unbatched(
     return score
 
 
-def compute_agent_obstacle_score_from_problem(
-    problem: Problem, trajectory: np.ndarray, sigma: float, n_integral: int
-):
-    """
-    Returns scores (T, A, O, D) and (T, A1, A2, D) for agent-obstacle and agent-agent interactions respectively.
-    This should be the main function used, because it offers the highest level of abstraction. Batching operations are handled internally.
-    """
-
-    # Create batch for agent-obstacle interactions.
-    agent_x_T_A = trajectory[:, :, 0]
-    agent_y_T_A = trajectory[:, :, 1]
-    obstacle_x_O = problem.obstacle_positions[:, 0]
-    obstacle_y_O = problem.obstacle_positions[:, 1]
-    obstacle_rad_O = problem.obstacle_radii
-    sigma_OA = sigma * np.ones(problem.obstacle_radii.shape[0] * trajectory.shape[1])
-
-    agent_x_T_A_O = np.repeat(
-        agent_x_T_A[:, :, None], problem.obstacle_positions.shape[0], axis=2
-    )
-    agent_y_T_A_O = np.repeat(
-        agent_y_T_A[:, :, None], problem.obstacle_positions.shape[0], axis=2
-    )
-    obstacle_x_T_A_O = np.repeat(
-        obstacle_x_O[None, None, :], trajectory.shape[0], axis=0
-    )
-    obstacle_x_T_A_O = np.repeat(obstacle_x_T_A_O, trajectory.shape[1], axis=1)
-    obstacle_y_T_A_O = np.repeat(
-        obstacle_y_O[None, None, :], trajectory.shape[0], axis=0
-    )
-    obstacle_y_T_A_O = np.repeat(obstacle_y_T_A_O, trajectory.shape[1], axis=1)
-    obstacle_rad_T_A_O = np.repeat(
-        (problem.agent_radii[:, None] + obstacle_rad_O[None, :])[None, :, :],
-        trajectory.shape[0],
-        axis=0,
-    )
-    sigma_T_A_O = np.repeat(sigma_OA[None, :], trajectory.shape[0], axis=0)
-
-    T, A, O = agent_x_T_A_O.shape  # noqa: E741
-
-    agent_x_T_A1_A2 = np.repeat(agent_x_T_A[:, :, None], trajectory.shape[1], axis=2)
-    agent_x_T_A2_A1 = np.repeat(agent_x_T_A[:, None, :], trajectory.shape[1], axis=1)
-    agent_y_T_A1_A2 = np.repeat(agent_y_T_A[:, :, None], trajectory.shape[1], axis=2)
-    agent_y_T_A2_A1 = np.repeat(agent_y_T_A[:, None, :], trajectory.shape[1], axis=1)
-    sigma_T_A1_A2 = (
-        np.sqrt(2)
-        * sigma
-        * np.ones((trajectory.shape[0], trajectory.shape[1], trajectory.shape[1]))
-    )
-    obstacle_rad_T_A1_A2 = np.repeat(
-        (problem.agent_radii[:, None] + problem.agent_radii[None, :])[None, :, :],
-        trajectory.shape[0],
-        axis=0,
-    )
-
-    agent_x_flat = np.concatenate(
-        [agent_x_T_A_O.reshape(-1), agent_x_T_A1_A2.reshape(-1)]
-    )
-    agent_y_flat = np.concatenate(
-        [agent_y_T_A_O.reshape(-1), agent_y_T_A1_A2.reshape(-1)]
-    )
-    obstacle_x_flat = np.concatenate(
-        [obstacle_x_T_A_O.reshape(-1), agent_x_T_A2_A1.reshape(-1)]
-    )
-    obstacle_y_flat = np.concatenate(
-        [obstacle_y_T_A_O.reshape(-1), agent_y_T_A2_A1.reshape(-1)]
-    )
-    obstacle_rad_flat = np.concatenate(
-        [obstacle_rad_T_A_O.reshape(-1), obstacle_rad_T_A1_A2.reshape(-1)]
-    )
-    sigma_flat = np.concatenate([sigma_T_A_O.reshape(-1), sigma_T_A1_A2.reshape(-1)])
-    score_flat = compute_agent_obstacle_score_batched_helper(
-        agent_x_flat,
-        agent_y_flat,
-        obstacle_x_flat,
-        obstacle_y_flat,
-        obstacle_rad_flat,
-        sigma_flat,
-        n_integral=n_integral,
-    )
-
-    # clip norm
-    norm = np.linalg.norm(score_flat, axis=-1, keepdims=True)
-    norm_clipped = np.clip(norm, 0, 1.0)
-    score_flat = score_flat * (norm_clipped / (1e-8 + norm))
-    score_flat[np.isnan(score_flat)] = 0.0
-
-    # unpack scores.
-    score_T_A_O_D = score_flat[: T * A * O, :].reshape(
-        trajectory.shape[0],
-        trajectory.shape[1],
-        problem.obstacle_positions.shape[0],
-        2,
-    )
-    score_T_A1_A2_D = score_flat[T * A * O :, :].reshape(
-        trajectory.shape[0], trajectory.shape[1], trajectory.shape[1], 2
-    )
-    # Remove self-intersections.
-    inds = np.arange(score_T_A1_A2_D.shape[1])
-    score_T_A1_A2_D[:, inds, inds, :] = 0
-
-    return score_T_A_O_D, score_T_A1_A2_D
-
-
 def compute_score(
     trajectory,
     problem: Problem[np.ndarray],
@@ -415,7 +312,7 @@ def compute_score(
     include_obstacles=True,
     kinetic_weight=10.0,
     magnitude_clip=1.0,
-    n_integral=200,
+    n_integral=50,
 ):
     """
     Batches across agents and obstacles.
@@ -424,11 +321,111 @@ def compute_score(
     score = np.zeros_like(trajectory)
 
     if include_obstacles:
-        # Don't compute self-interactions.
-        score_T_A_O_D, score_T_A1_A2_D = compute_agent_obstacle_score_from_problem(
-            problem, trajectory, sigma, n_integral=n_integral
+        # Create batch for agent-obstacle interactions.
+        agent_x_T_A = trajectory[:, :, 0]
+        agent_y_T_A = trajectory[:, :, 1]
+        obstacle_x_O = problem.obstacle_positions[:, 0]
+        obstacle_y_O = problem.obstacle_positions[:, 1]
+        obstacle_rad_O = problem.obstacle_radii
+        sigma_OA = sigma * np.ones(
+            problem.obstacle_radii.shape[0] * trajectory.shape[1]
         )
-        score += score_T_A1_A2_D.sum(axis=2) + score_T_A_O_D.sum(axis=2)
+
+        agent_x_T_A_O = np.repeat(
+            agent_x_T_A[:, :, None], problem.obstacle_positions.shape[0], axis=2
+        )
+        agent_y_T_A_O = np.repeat(
+            agent_y_T_A[:, :, None], problem.obstacle_positions.shape[0], axis=2
+        )
+        obstacle_x_T_A_O = np.repeat(
+            obstacle_x_O[None, None, :], trajectory.shape[0], axis=0
+        )
+        obstacle_x_T_A_O = np.repeat(obstacle_x_T_A_O, trajectory.shape[1], axis=1)
+        obstacle_y_T_A_O = np.repeat(
+            obstacle_y_O[None, None, :], trajectory.shape[0], axis=0
+        )
+        obstacle_y_T_A_O = np.repeat(obstacle_y_T_A_O, trajectory.shape[1], axis=1)
+        obstacle_rad_T_A_O = np.repeat(
+            (problem.agent_radii[:, None] + obstacle_rad_O[None, :])[None, :, :],
+            trajectory.shape[0],
+            axis=0,
+        )
+        sigma_T_A_O = np.repeat(sigma_OA[None, :], trajectory.shape[0], axis=0)
+
+        T, A, O = agent_x_T_A_O.shape  # noqa: E741
+
+        agent_x_T_A1_A2 = np.repeat(
+            agent_x_T_A[:, :, None], trajectory.shape[1], axis=2
+        )
+        agent_x_T_A2_A1 = np.repeat(
+            agent_x_T_A[:, None, :], trajectory.shape[1], axis=1
+        )
+        agent_y_T_A1_A2 = np.repeat(
+            agent_y_T_A[:, :, None], trajectory.shape[1], axis=2
+        )
+        agent_y_T_A2_A1 = np.repeat(
+            agent_y_T_A[:, None, :], trajectory.shape[1], axis=1
+        )
+        sigma_T_A1_A2 = (
+            np.sqrt(2)
+            * sigma
+            * np.ones((trajectory.shape[0], trajectory.shape[1], trajectory.shape[1]))
+        )
+        obstacle_rad_T_A1_A2 = np.repeat(
+            (problem.agent_radii[:, None] + problem.agent_radii[None, :])[None, :, :],
+            trajectory.shape[0],
+            axis=0,
+        )
+
+        agent_x_flat = np.concatenate(
+            [agent_x_T_A_O.reshape(-1), agent_x_T_A1_A2.reshape(-1)]
+        )
+        agent_y_flat = np.concatenate(
+            [agent_y_T_A_O.reshape(-1), agent_y_T_A1_A2.reshape(-1)]
+        )
+        obstacle_x_flat = np.concatenate(
+            [obstacle_x_T_A_O.reshape(-1), agent_x_T_A2_A1.reshape(-1)]
+        )
+        obstacle_y_flat = np.concatenate(
+            [obstacle_y_T_A_O.reshape(-1), agent_y_T_A2_A1.reshape(-1)]
+        )
+        obstacle_rad_flat = np.concatenate(
+            [obstacle_rad_T_A_O.reshape(-1), obstacle_rad_T_A1_A2.reshape(-1)]
+        )
+        sigma_flat = np.concatenate(
+            [sigma_T_A_O.reshape(-1), sigma_T_A1_A2.reshape(-1)]
+        )
+        score_flat = compute_agent_obstacle_score_batched(
+            agent_x_flat,
+            agent_y_flat,
+            obstacle_x_flat,
+            obstacle_y_flat,
+            obstacle_rad_flat,
+            sigma_flat,
+            n_integral=n_integral,
+        )
+
+        # clip norm
+        norm = np.linalg.norm(score_flat, axis=-1, keepdims=True)
+        norm_clipped = np.clip(norm, 0, 1.0)
+        score_flat = score_flat * (norm_clipped / (1e-8 + norm))
+        score_flat[np.isnan(score_flat)] = 0.0
+
+        # unpack scores.
+        score_T_A_O_D = score_flat[: T * A * O, :].reshape(
+            trajectory.shape[0],
+            trajectory.shape[1],
+            problem.obstacle_positions.shape[0],
+            2,
+        )
+        score_T_A1_A2_D = score_flat[T * A * O :, :].reshape(
+            trajectory.shape[0], trajectory.shape[1], trajectory.shape[1], 2
+        )
+        # Don't compute self-interactions.
+        score += (
+            score_T_A1_A2_D.sum(axis=2)
+            - np.diagonal(score_T_A1_A2_D, axis1=1, axis2=2).transpose(0, 2, 1)
+        ) + (score_T_A_O_D.sum(axis=2))
 
     score = score + kinetic_weight * compute_kinetic_energy_score(trajectory, sigma)
 
