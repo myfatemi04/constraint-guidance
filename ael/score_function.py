@@ -231,6 +231,66 @@ def compute_agent_obstacle_score_batched_helper(
     return score_D_B.T
 
 
+def compute_velocity_score_batched_helper(
+    xy_B_T_D: np.ndarray, max_speed_B: np.ndarray, sigma_B: np.ndarray, n_integral=10
+):
+    # Here, S = 0 corresponds to the delta between T = 0 and T = 1.
+    x_T_B = xy_B_T_D[..., 0].T
+    y_T_B = xy_B_T_D[..., 1].T
+    dx_S_B = x_T_B[:, 1:] - x_T_B[:, :-1]
+    dy_S_B = y_T_B[:, 1:] - y_T_B[:, :-1]
+    v2_S_B = (dx_S_B) ** 2 + (dy_S_B) ** 2
+    v_S_B = np.sqrt(v2_S_B).T
+
+    temp0 = np.abs(v_S_B - max_speed_B)
+    temp1 = np.abs(v_S_B + max_speed_B)
+    r1_S_B = np.minimum(temp0, temp1)
+    r2_S_B = np.maximum(temp0, temp1)
+
+    r_values_N_S_B = (
+        np.linspace(0, 1, n_integral, endpoint=False)[:, None, None] * (r2_S_B - r1_S_B)
+        + r1_S_B
+    )
+
+    dr_S_B = r_values_N_S_B[1, :] - r_values_N_S_B[0, :]
+    r_values_N_S_B = r_values_N_S_B + dr_S_B / 2
+
+    intersection_eps_x_S_B = -(max_speed_B**2 - r_values_N_S_B**2 - v_S_B**2) / (
+        2 * v_S_B
+    )
+    theta_max_N_S_B = np.arccos(intersection_eps_x_S_B / r_values_N_S_B)
+
+    denominator_S_B = (
+        # 2r
+        (2 * r_values_N_S_B)
+        # Gaussian PDF
+        * (np.exp(-0.5 * (r_values_N_S_B**2) / (sigma_B**2)) / (2 * np.pi * sigma_B**2))
+        # theta_{max}
+        * theta_max_N_S_B
+    ).sum(axis=0) * dr_S_B
+    denominator_S_B += np.where(v_S_B < max_speed_B, 1 - np.exp(-r1_S_B), 0)
+
+    intersection_eps_y_S_B = np.sqrt(r_values_N_S_B**2 - intersection_eps_x_S_B**2)
+    numerator_S_B = (
+        # 2r^2 sin theta_{max}(r)
+        (2 * r_values_N_S_B * intersection_eps_y_S_B)
+        # Gaussian PDF
+        * (np.exp(-0.5 * (r_values_N_S_B**2) / (sigma_B**2)) / (2 * np.pi * sigma_B**2))
+    ).sum(axis=0) * dr_S_B
+
+    # Multiplies by the component vector for epsilon'_x. D = |{x, y}| = 2
+    numerator_D_S_B = np.stack([dx_S_B, dy_S_B], axis=0) / v_S_B * numerator_S_B
+    score_D_S_B = 1 / (sigma_B**2) * numerator_D_S_B / denominator_S_B
+
+    # Assign to T coordinates via chain rule.
+    score_D_T_B = np.zeros((2, xy_B_T_D.shape[1], xy_B_T_D.shape[0]))
+    score_D_T_B[:, :-1, :] -= score_D_S_B
+    score_D_T_B[:, 1:, :] += score_D_S_B
+
+    score_B_T_D = score_D_T_B.transpose(2, 1, 0)
+    return score_B_T_D
+
+
 @lru_cache(maxsize=16)
 def get_velocity_kernel(N: int, sigma: float):
     velocity_kernel = np.zeros((N - 1, N))
@@ -245,64 +305,6 @@ def compute_kinetic_energy_score(trajectory: np.ndarray, sigma):
     return np.einsum(
         "it,tad->iad", get_velocity_kernel(trajectory.shape[0], sigma), trajectory
     )
-
-
-# TODO: Remove.
-def compute_score_unbatched(
-    trajectory,
-    problem: Problem[np.ndarray],
-    sigma,
-    include_obstacles=True,
-    kinetic_weight=10.0,
-    magnitude_clip=1.0,
-):
-    score = np.zeros_like(trajectory)
-
-    if include_obstacles:
-        for t in range(trajectory.shape[0]):
-            for agent in range(trajectory.shape[1]):
-                agent_x = trajectory[t, agent, 0]
-                agent_y = trajectory[t, agent, 1]
-
-                for obs_idx in range(problem.obstacle_positions.shape[0]):
-                    obs_x = problem.obstacle_positions[obs_idx, 0]
-                    obs_y = problem.obstacle_positions[obs_idx, 1]
-                    obs_rad = problem.obstacle_radii[obs_idx]
-
-                    score[t, agent] += clip_magnitude(
-                        compute_agent_obstacle_score_unbatched(
-                            agent_x,
-                            agent_y,
-                            obs_x,
-                            obs_y,
-                            obs_rad + problem.agent_radii[agent],
-                            sigma,
-                        ),
-                        magnitude_clip,
-                    )
-
-                for other_agent in range(trajectory.shape[1]):
-                    if other_agent == agent:
-                        continue
-                    other_agent_x = trajectory[t, other_agent, 0]
-                    other_agent_y = trajectory[t, other_agent, 1]
-
-                    score[t, agent] += clip_magnitude(
-                        compute_agent_obstacle_score_unbatched(
-                            agent_x,
-                            agent_y,
-                            other_agent_x,
-                            other_agent_y,
-                            problem.agent_radii[agent]
-                            + problem.agent_radii[other_agent],
-                            np.sqrt(2) * sigma,  # sum the variances
-                        ),
-                        magnitude_clip,
-                    )
-
-    score = score + kinetic_weight * compute_kinetic_energy_score(trajectory, sigma)
-
-    return score
 
 
 def compute_agent_obstacle_score_from_problem(
@@ -429,6 +431,13 @@ def compute_score(
             problem, trajectory, sigma, n_integral=n_integral
         )
         score += score_T_A1_A2_D.sum(axis=2) + score_T_A_O_D.sum(axis=2)
+
+    score += compute_velocity_score_batched_helper(
+        trajectory,
+        problem.agent_max_speeds,
+        np.ones(problem.num_agents) * sigma,
+        n_integral,
+    )
 
     score = score + kinetic_weight * compute_kinetic_energy_score(trajectory, sigma)
 
