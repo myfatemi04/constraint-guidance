@@ -232,67 +232,97 @@ def compute_agent_obstacle_score_batched_helper(
 
 
 def compute_velocity_score_batched_helper(
-    xy_B_T_D: np.ndarray, max_speed_B: np.ndarray, sigma_B: np.ndarray, n_integral=10
+    xy_T_B_D: np.ndarray, max_speed_B: np.ndarray, sigma_B: np.ndarray, n_integral=10
 ):
     # Here, S = 0 corresponds to the delta between T = 0 and T = 1.
-    x_T_B = xy_B_T_D[..., 0].T
-    y_T_B = xy_B_T_D[..., 1].T
-    dx_S_B = x_T_B[:, 1:] - x_T_B[:, :-1]
-    dy_S_B = y_T_B[:, 1:] - y_T_B[:, :-1]
-    v2_S_B = (dx_S_B) ** 2 + (dy_S_B) ** 2
-    v_S_B = np.sqrt(v2_S_B).T
+    x_T_B = xy_T_B_D[..., 0]
+    y_T_B = xy_T_B_D[..., 1]
+    dx_S_B = x_T_B[1:, :] - x_T_B[:-1, :]
+    dy_S_B = y_T_B[1:, :] - y_T_B[:-1, :]
+    v2_S_B = dx_S_B**2 + dy_S_B**2
+    v_S_B = np.sqrt(v2_S_B)
 
     temp0 = np.abs(v_S_B - max_speed_B)
     temp1 = np.abs(v_S_B + max_speed_B)
     r1_S_B = np.minimum(temp0, temp1)
     r2_S_B = np.maximum(temp0, temp1)
 
-    r_values_N_S_B = (
-        np.linspace(0, 1, n_integral, endpoint=False)[:, None, None] * (r2_S_B - r1_S_B)
-        + r1_S_B
-    )
+    r_values_N_S_B = np.linspace(0, 1, n_integral, endpoint=False)[:, None, None] * (
+        r2_S_B - r1_S_B
+    ) + (r1_S_B + 1e-8)
 
     dr_S_B = r_values_N_S_B[1, :] - r_values_N_S_B[0, :]
-    r_values_N_S_B = r_values_N_S_B + dr_S_B / 2
+    r_values_N_S_B = r_values_N_S_B  # + dr_S_B / 2
 
     intersection_eps_x_S_B = -(max_speed_B**2 - r_values_N_S_B**2 - v_S_B**2) / (
-        2 * v_S_B
+        2 * v_S_B + 1e-6
     )
+
     theta_max_N_S_B = np.arccos(intersection_eps_x_S_B / r_values_N_S_B)
+
+    # Select from r_values_N_S_B because it includes the dr offset.
+    base_exp_arg_S_B = -0.5 * (r_values_N_S_B[0] / sigma_B) ** 2
 
     denominator_S_B = (
         # 2r
         (2 * r_values_N_S_B)
         # Gaussian PDF
-        * (np.exp(-0.5 * (r_values_N_S_B**2) / (sigma_B**2)) / (2 * np.pi * sigma_B**2))
+        * (
+            np.exp(-0.5 * (r_values_N_S_B / sigma_B) ** 2 - base_exp_arg_S_B)
+            / (2 * np.pi * sigma_B**2)
+        )
         # theta_{max}
         * theta_max_N_S_B
     ).sum(axis=0) * dr_S_B
-    denominator_S_B += np.where(v_S_B < max_speed_B, 1 - np.exp(-r1_S_B), 0)
+    denominator_S_B += np.where(
+        v_S_B < max_speed_B,
+        (1 - np.exp(-r_values_N_S_B[0])) * np.exp(-base_exp_arg_S_B),
+        0,
+    )
+
+    # print((-base_exp_arg_S_B, -r_values_N_S_B[0] - base_exp_arg_S_B))
+    # print((np.exp(-base_exp_arg_S_B) - np.exp(-r_values_N_S_B[0] - base_exp_arg_S_B)))
 
     intersection_eps_y_S_B = np.sqrt(r_values_N_S_B**2 - intersection_eps_x_S_B**2)
+
     numerator_S_B = (
         # 2r^2 sin theta_{max}(r)
         (2 * r_values_N_S_B * intersection_eps_y_S_B)
         # Gaussian PDF
-        * (np.exp(-0.5 * (r_values_N_S_B**2) / (sigma_B**2)) / (2 * np.pi * sigma_B**2))
+        * (
+            np.exp(-0.5 * (r_values_N_S_B / sigma_B) ** 2 - base_exp_arg_S_B)
+            / (2 * np.pi * sigma_B**2)
+        )
     ).sum(axis=0) * dr_S_B
 
-    # Multiplies by the component vector for epsilon'_x. D = |{x, y}| = 2
-    numerator_D_S_B = np.stack([dx_S_B, dy_S_B], axis=0) / v_S_B * numerator_S_B
-    score_D_S_B = 1 / (sigma_B**2) * numerator_D_S_B / denominator_S_B
+    # print(intersection_eps_y_S_B)
+    # print(r_values_N_S_B)
+    # exp = np.exp(-0.5 * (r_values_N_S_B / sigma_B) ** 2 - base_exp_arg_S_B)
+    # exp_arg = -0.5 * (r_values_N_S_B / sigma_B) ** 2 - base_exp_arg_S_B
+    # print(exp, exp_arg, r1_S_B, r_values_N_S_B)
+    # print(numerator_S_B)
+    # print(denominator_S_B)
+
+    # Multiply by the component vector for epsilon'_x. D = |{x, y}| = 2
+    numerator_S_B_D = (
+        -np.stack([dx_S_B, dy_S_B], axis=-1)
+        / (v_S_B[..., None] + 1e-6)
+        * numerator_S_B[..., None]
+    )
+    score_S_B_D = (
+        1 / (sigma_B[:, None] ** 2) * numerator_S_B_D / denominator_S_B[..., None]
+    )
 
     # Assign to T coordinates via chain rule.
-    score_D_T_B = np.zeros((2, xy_B_T_D.shape[1], xy_B_T_D.shape[0]))
-    score_D_T_B[:, :-1, :] -= score_D_S_B
-    score_D_T_B[:, 1:, :] += score_D_S_B
+    score_T_B_D = np.zeros_like(xy_T_B_D)
+    score_T_B_D[:-1, :, :] -= score_S_B_D
+    score_T_B_D[1:, :, :] += score_S_B_D
 
-    score_B_T_D = score_D_T_B.transpose(2, 1, 0)
-    return score_B_T_D
+    return score_T_B_D
 
 
 @lru_cache(maxsize=16)
-def get_velocity_kernel(N: int, sigma: float):
+def get_kinetic_energy_kernel(N: int, sigma: float):
     velocity_kernel = np.zeros((N - 1, N))
     velocity_kernel[:, 1:] = np.eye(N - 1)
     velocity_kernel -= np.eye(N - 1, N)
@@ -301,9 +331,9 @@ def get_velocity_kernel(N: int, sigma: float):
     return score_kernel
 
 
-def compute_kinetic_energy_score(trajectory: np.ndarray, sigma):
+def compute_kinetic_energy_score(xy_T_B_D: np.ndarray, sigma):
     return np.einsum(
-        "it,tad->iad", get_velocity_kernel(trajectory.shape[0], sigma), trajectory
+        "it,tad->iad", get_kinetic_energy_kernel(xy_T_B_D.shape[0], sigma), xy_T_B_D
     )
 
 
@@ -411,7 +441,7 @@ def compute_agent_obstacle_score_from_problem(
 
 
 def compute_score(
-    trajectory,
+    xy_T_B_D,
     problem: Problem[np.ndarray],
     sigma,
     include_obstacles,
@@ -423,25 +453,27 @@ def compute_score(
     Batches across agents and obstacles.
     """
 
-    score = np.zeros_like(trajectory)
+    score_T_B_D = np.zeros_like(xy_T_B_D)
 
     if include_obstacles:
         # Don't compute self-interactions.
         score_T_A_O_D, score_T_A1_A2_D = compute_agent_obstacle_score_from_problem(
-            problem, trajectory, sigma, n_integral=n_integral
+            problem, xy_T_B_D, sigma, n_integral=n_integral
         )
-        score += score_T_A1_A2_D.sum(axis=2) + score_T_A_O_D.sum(axis=2)
+        score_T_B_D += score_T_A1_A2_D.sum(axis=2) + score_T_A_O_D.sum(axis=2)
 
-    score += compute_velocity_score_batched_helper(
-        trajectory,
+    score_T_B_D += compute_velocity_score_batched_helper(
+        xy_T_B_D,
         problem.agent_max_speeds,
         np.ones(problem.num_agents) * sigma,
         n_integral,
     )
 
-    score = score + kinetic_weight * compute_kinetic_energy_score(trajectory, sigma)
+    score_T_B_D = score_T_B_D + kinetic_weight * compute_kinetic_energy_score(
+        xy_T_B_D, sigma
+    )
 
-    return score
+    return score_T_B_D
 
 
 def evaluate_trajectory_unscaled_probabilities(

@@ -232,7 +232,7 @@ def solve(
         target_paths_by_agent = None
 
     for schedule_entry in schedule:
-        for agent_index in range(schedule_entry.num_steps):
+        for step in range(schedule_entry.num_steps):
             match score_computation_method:
                 case ScoreComputationMethod.APPROXIMATE_V0:
                     score = compute_score(
@@ -305,6 +305,10 @@ def solve(
                             / (schedule_entry.sigma**2 + 0.1)
                         )
 
+            if np.isnan(score).any():
+                print("nan in score", step)
+                exit()
+
             beta1_t *= optimizer_options.beta1
             beta2_t *= optimizer_options.beta2
 
@@ -330,6 +334,10 @@ def solve(
             trajectory[0] = start_positions
             trajectory[-1] = end_positions
             trajectories.append(trajectory.copy())
+
+            if np.isnan(trajectory).any():
+                logger.warning("Trajectory contains NaN values, stopping optimization.")
+                break
 
     solve_time = time.time() - t0
 
