@@ -420,9 +420,9 @@ def compute_agent_obstacle_score_from_problem(
     )
 
     # clip norm
-    norm = np.linalg.norm(score_flat, axis=-1, keepdims=True)
-    norm_clipped = np.clip(norm, 0, 1.0)
-    score_flat = score_flat * (norm_clipped / (1e-8 + norm))
+    # norm = np.linalg.norm(score_flat, axis=-1, keepdims=True)
+    # norm_clipped = np.clip(norm, 0, 1.0)
+    # score_flat = score_flat * (norm_clipped / (1e-8 + norm))
     score_flat[np.isnan(score_flat)] = 0.0
 
     # unpack scores.

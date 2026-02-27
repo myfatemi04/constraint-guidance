@@ -87,7 +87,7 @@ DEFAULT_SCHEDULE_APPROXIMATE_V0 = [
         step_size=0.03 * (0.01 / 0.03) ** (i / STEPS),
         num_steps=1,
         score_fn_kwargs=dict(
-            kinetic_weight=10 * (1 / 10) ** (i / STEPS), n_integral=16
+            kinetic_weight=10 * (1 / 10) ** (i / STEPS), n_integral=50
         ),
     )
     for i in range(STEPS)
