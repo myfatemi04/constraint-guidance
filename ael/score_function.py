@@ -195,7 +195,9 @@ def compute_agent_obstacle_score_batched_helper(
     numerator_magnitude_bound_B = (
         (r2_B - r1_B) * 2 / np.pi * numerator_magnitude_bound_B
     )
-    numerator_mask = (numerator_magnitude_bound_B / denominator_B) > numerator_threshold
+    numerator_mask = (
+        numerator_magnitude_bound_B / (denominator_B + 1e-8)
+    ) > numerator_threshold
     numerator_B = np.zeros_like(denominator_B)
 
     intersection_eps_y_T_B = np.sqrt(

@@ -80,19 +80,17 @@ class ScoreComputationMethod(str, enum.Enum):
     VORONOI_GUIDANCE = "voronoi_guidance"
 
 
+STEPS = 500
 DEFAULT_SCHEDULE_APPROXIMATE_V0 = [
     ScheduleEntry(
-        sigma=0.01,
-        step_size=0.01,
-        num_steps=60,
-        score_fn_kwargs=dict(kinetic_weight=10, n_integral=16),
-    ),
-    ScheduleEntry(
-        sigma=0.001,
-        step_size=0.01,
-        num_steps=60,
-        score_fn_kwargs=dict(kinetic_weight=0.1, n_integral=16),
-    ),
+        sigma=0.1 * (0.01 / 0.1) ** (i / STEPS),
+        step_size=0.03 * (0.01 / 0.03) ** (i / STEPS),
+        num_steps=1,
+        score_fn_kwargs=dict(
+            kinetic_weight=10 * (1 / 10) ** (i / STEPS), n_integral=16
+        ),
+    )
+    for i in range(STEPS)
 ]
 
 DEFAULT_SCHEDULE_MPPI = [
@@ -269,12 +267,12 @@ def solve(
                         **(schedule_entry.score_fn_kwargs or {}),
                     )
                 case ScoreComputationMethod.VORONOI_GUIDANCE:
-                    score = compute_score_from_boundary_integrals(
+                    score = compute_score(
                         trajectory,
                         problem=problem,
                         sigma=schedule_entry.sigma,
-                        obstacle_boundaries=obstacle_boundaries,
-                        include_kinetic=True,
+                        include_obstacles=True,
+                        magnitude_clip=optimizer_options.magnitude_clip,
                         **(schedule_entry.score_fn_kwargs or {}),
                     )
                     # add Voronoi guidance
@@ -302,7 +300,7 @@ def solve(
                         score[:, agent_index, :] += (
                             (weighted_path - trajectory[:, agent_index, :])
                             * 0.01
-                            / (schedule_entry.sigma**2 + 0.1)
+                            / (schedule_entry.sigma**2 + 0.1**2)
                         )
 
             if np.isnan(score).any():

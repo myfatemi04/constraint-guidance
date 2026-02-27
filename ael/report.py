@@ -94,14 +94,20 @@ if __name__ == "__main__":
         k: f"results/2026-02-24/experiment_08-26-02/{k}/table.csv"
         for k in ["dense", "simple", "shelf", "connected_room"]
     }
+    # add velocity constraint
+    paths_4 = paths_1 | {
+        k: f"results/2026-02-26/experiment_19-42-48/{k}/table.csv"
+        for k in ["dense", "simple", "shelf", "connected_room"]
+    }
 
-    paths = paths_3
+    paths = paths_4
+    name = "voronoi_init_and_velocity_constraint"
 
     dense_df = pd.read_csv(paths["dense"])
     connected_room_df = pd.read_csv(paths["connected_room"])
     shelf_df = pd.read_csv(paths["shelf"])
     simple_df = pd.read_csv(paths["simple"])
-    figures_dir = Path("figures")
+    figures_dir = Path("figures") / name
     figures_dir.mkdir(parents=True, exist_ok=True)
     df_and_title = [
         (dense_df, "Dense"),
