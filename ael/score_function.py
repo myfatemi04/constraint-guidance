@@ -566,8 +566,8 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
     agent_agent_constraint_tolerance: float,
     agent_obstacle_constraint_tolerance: float,
     velocity_constraint_tolerance: float,
-    use_velocity_baseline: bool = False,
-    kinetic_energy_lambda: float = 5,
+    use_velocity_baseline: bool,
+    kinetic_weight: float,
 ) -> MPPITrajectoryEvaluation:
     """
     Estimates trajectory likelihoods by adding noise to each coordinate separately.
@@ -675,10 +675,10 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
     )
 
     result["kinetic_energy"][:, 1:] *= np.exp(
-        -delta_kinetic_energy_per_deviation_reverse * kinetic_energy_lambda
+        -delta_kinetic_energy_per_deviation_reverse * kinetic_weight
     )
     result["kinetic_energy"][:, :-1] *= np.exp(
-        -delta_kinetic_energy_per_deviation_forward * kinetic_energy_lambda
+        -delta_kinetic_energy_per_deviation_forward * kinetic_weight
     )
 
     return MPPITrajectoryEvaluation(
@@ -687,8 +687,10 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
         velocity=result["velocity"],
         kinetic_energy=result["kinetic_energy"],
         overall=(
-            result["kinetic_energy"] * result["agent_agent"] * result["agent_obstacle"]
-            # * result["velocity"]
+            result["kinetic_energy"]
+            * result["agent_agent"]
+            * result["agent_obstacle"]
+            * result["velocity"]
         ),
     )
 
@@ -698,9 +700,8 @@ def compute_score_mppi_factorized(
     problem: Problem[np.ndarray],
     sigma: float,
     num_samples: int,
-    agent_agent_constraint_tolerance: float,
-    agent_obstacle_constraint_tolerance: float,
-    velocity_constraint_tolerance: float,
+    kinetic_weight: float,
+    **kwargs,
 ):
     noise_B_T_A_D = (
         np.random.normal(size=(num_samples, *trajectory_T_A_D.shape)) * sigma
@@ -709,19 +710,31 @@ def compute_score_mppi_factorized(
         trajectory_T_A_D,
         noise_B_T_A_D,
         problem,
-        agent_agent_constraint_tolerance,
-        agent_obstacle_constraint_tolerance,
-        velocity_constraint_tolerance,
+        agent_agent_constraint_tolerance=0,
+        agent_obstacle_constraint_tolerance=0,
+        velocity_constraint_tolerance=0,
+        use_velocity_baseline=True,
+        kinetic_weight=kinetic_weight,
     )
+    # Compute scores for each factor.
     eps = 1e-8
-    weights = evaluation.overall / (
-        # divide over batch dimension
-        np.sum(evaluation.overall, axis=0) + eps
+    agent_agent_weights = evaluation.agent_agent / (
+        np.sum(evaluation.agent_agent, axis=0) + eps
     )
-    # acceptance = evaluation.overall > 0
-    # print(acceptance.sum() / np.prod(evaluation.overall.shape))
-    # score = 1 / sigma**2 * np.sum(noise * weights[:, :, :, None], axis=0)
-    score = np.sum(noise_B_T_A_D * weights[:, :, :, None], axis=0)
+    agent_obstacle_weights = evaluation.agent_obstacle / (
+        np.sum(evaluation.agent_obstacle, axis=0) + eps
+    )
+    velocity_weights = evaluation.velocity / (np.sum(evaluation.velocity, axis=0) + eps)
+    kinetic_energy_weights = evaluation.kinetic_energy / (
+        np.sum(evaluation.kinetic_energy, axis=0) + eps
+    )
+    total_weights = (
+        agent_agent_weights
+        + agent_obstacle_weights
+        + velocity_weights
+        + kinetic_energy_weights
+    )
+    score = np.sum(noise_B_T_A_D * total_weights[:, :, :, None], axis=0)
     return score
 
 

@@ -93,20 +93,6 @@ DEFAULT_SCHEDULE_APPROXIMATE_V0 = [
     for i in range(STEPS)
 ]
 
-DEFAULT_SCHEDULE_MPPI = [
-    ScheduleEntry(
-        sigma=sigma,
-        step_size=1.0,
-        num_steps=20,
-        score_fn_kwargs=dict(
-            agent_agent_constraint_tolerance=0.0,
-            agent_obstacle_constraint_tolerance=0.0,
-            velocity_constraint_tolerance=0.0,
-        ),
-    )
-    for sigma in [1.0, 0.5, 0.25, 0.1, 0.05, 0.025, 0.01]
-]
-
 DEFAULT_SCHEDULE_BOUNDARY_INTEGRALS = [
     ScheduleEntry(sigma=sigma, step_size=0.1, num_steps=200)
     # for sigma in [1.0, 0.5, 0.25, 0.1, 0.05, 0.025, 0.01]
@@ -116,8 +102,16 @@ DEFAULT_SCHEDULE_BOUNDARY_INTEGRALS = [
 
 DEFAULT_SCHEDULES: dict[ScoreComputationMethod, list[ScheduleEntry]] = {
     ScoreComputationMethod.APPROXIMATE_V0: DEFAULT_SCHEDULE_APPROXIMATE_V0,
-    ScoreComputationMethod.UNFACTORIZED_MPPI: DEFAULT_SCHEDULE_MPPI,
-    ScoreComputationMethod.FACTORIZED_MPPI: DEFAULT_SCHEDULE_MPPI,
+    ScoreComputationMethod.UNFACTORIZED_MPPI: DEFAULT_SCHEDULE_APPROXIMATE_V0,
+    ScoreComputationMethod.FACTORIZED_MPPI: [
+        ScheduleEntry(
+            **(
+                s.__dict__
+                | {"score_fn_kwargs": (s.score_fn_kwargs or {}) | {"num_samples": 256}}
+            )
+        )
+        for s in DEFAULT_SCHEDULE_APPROXIMATE_V0
+    ],
     ScoreComputationMethod.BOUNDARY_INTEGRALS: DEFAULT_SCHEDULE_BOUNDARY_INTEGRALS,
     ScoreComputationMethod.VORONOI_GUIDANCE: DEFAULT_SCHEDULE_APPROXIMATE_V0,
 }
@@ -135,15 +129,15 @@ def solve(
     if schedule is None:
         schedule = DEFAULT_SCHEDULES[score_computation_method]
 
-    if score_computation_method in [
-        ScoreComputationMethod.UNFACTORIZED_MPPI,
-        ScoreComputationMethod.FACTORIZED_MPPI,
-    ]:
-        # step_size_ok = all(s.step_size == 1 for s in schedule)
-        step_size_ok = True
-        assert optimizer_options.kind == "sgd" and step_size_ok, (
-            "MPPI computations require SGD with a step size of 1 for true equivalence."
-        )
+    # if score_computation_method in [
+    #     ScoreComputationMethod.UNFACTORIZED_MPPI,
+    #     ScoreComputationMethod.FACTORIZED_MPPI,
+    # ]:
+    #     # step_size_ok = all(s.step_size == 1 for s in schedule)
+    #     step_size_ok = True
+    #     assert optimizer_options.kind == "sgd" and step_size_ok, (
+    #         "MPPI computations require SGD with a step size of 1 for true equivalence."
+    #     )
 
     # TODO: Initialize from prior distribution based on energy.
     start_positions = problem.agent_start_positions
@@ -246,7 +240,6 @@ def solve(
                         trajectory,
                         problem=problem,
                         sigma=schedule_entry.sigma,
-                        num_samples=100,
                         **(schedule_entry.score_fn_kwargs or {}),
                     )
                 case ScoreComputationMethod.FACTORIZED_MPPI:
@@ -254,7 +247,6 @@ def solve(
                         trajectory,
                         problem=problem,
                         sigma=schedule_entry.sigma,
-                        num_samples=100,
                         **(schedule_entry.score_fn_kwargs or {}),
                     )
                 case ScoreComputationMethod.BOUNDARY_INTEGRALS:

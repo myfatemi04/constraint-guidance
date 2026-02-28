@@ -116,7 +116,8 @@ def store_result(
             "-i",
             str(save_dir / "optimization_process.mp4"),
             str(save_dir / "optimization_process.gif"),
-        ]
+        ],
+        stdout=subprocess.DEVNULL,
     )
     subprocess.call(
         [
@@ -124,7 +125,8 @@ def store_result(
             "-i",
             str(save_dir / "final_trajectory.mp4"),
             str(save_dir / "final_trajectory.gif"),
-        ]
+        ],
+        stdout=subprocess.DEVNULL,
     )
 
 
