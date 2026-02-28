@@ -583,7 +583,7 @@ def interpolate(path: np.ndarray, dt, speed):
     return np.array(points)
 
 
-def _get_voronoi_graph(problem: Problem, voronoi: Voronoi):
+def _get_voronoi_graph(problem: Problem, voronoi: Voronoi) -> nx.Graph:
     dict_graph = _get_graph_without_vertices_in_obstacles(
         voronoi,
         problem.obstacle_positions,
@@ -610,22 +610,26 @@ def _get_voronoi_graph(problem: Problem, voronoi: Voronoi):
             )
             graph.add_edge(mapped_node_id, mapped_neighbor, weight=weight)
 
-    return graph, vertices
+    return graph
 
 
-def make_roadmap(problem: Problem, circle_approximation_num_sides: int = 32):
+def make_roadmap(
+    problem: Problem, circle_approximation_num_sides: int = 32
+) -> nx.Graph:
     """Generates sample trajectories, using num_trajectories for each agent."""
     all_points = _create_voronoi_polygon(problem, circle_approximation_num_sides)
     vor = Voronoi(all_points)
-    graph, vertices = _get_voronoi_graph(problem, vor)
-    return graph, vertices
+    return _get_voronoi_graph(problem, vor)
 
 
 def generate_paths(
-    graph, vertices, start_position, end_position, num_paths
+    graph: nx.Graph, start_position, end_position, num_paths
 ) -> list[np.ndarray]:
     # Create a copy of the graph to avoid modifying the original
     graph_copy = graph.copy()
+    vertices = np.array(
+        [graph_copy.nodes[node]["pos"] for node in sorted(graph_copy.nodes())]
+    )
 
     start_and_goal = np.vstack([start_position, end_position])
     closest_to_start_id, closest_to_goal_id = np.argmin(
@@ -665,7 +669,8 @@ def generate_sample_trajectories_demo():
 
     problem = Problem.from_json(data[14], "numpy")
 
-    graph, vertices = make_roadmap(problem)
+    graph = make_roadmap(problem)
+    vertices = np.array([graph.nodes[node]["pos"] for node in sorted(graph.nodes())])
 
     visualize(problem, plt.gca(), start_markersize=2, end_markersize=2)
 
@@ -684,7 +689,7 @@ def generate_sample_trajectories_demo():
             )
 
     # Use generate_paths to properly handle start and goal positions
-    topk_paths = generate_paths(graph, vertices, v0, v1, num_paths=5)
+    topk_paths = generate_paths(graph, v0, v1, num_paths=5)
 
     for path in topk_paths:
         plt.plot(path[:, 0], path[:, 1], "-", linewidth=2)

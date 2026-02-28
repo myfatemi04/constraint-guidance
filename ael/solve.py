@@ -5,7 +5,7 @@ The main solving algorithm.
 import enum
 import time
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from loguru import logger
@@ -23,6 +23,9 @@ from ael.score_function import (
     compute_score_mppi_unfactorized,
 )
 from ael.visgraphprior import generate_paths, interpolate, make_roadmap
+
+if TYPE_CHECKING:
+    from ael.cbs_spatial_approximation import CBSConstraint
 
 
 @dataclass
@@ -117,49 +120,14 @@ DEFAULT_SCHEDULES: dict[ScoreComputationMethod, list[ScheduleEntry]] = {
 }
 
 
-def solve(
-    problem: Problem,
-    score_computation_method: ScoreComputationMethod,
-    optimizer_options: OptimizerOptions = OptimizerOptions(),
-    schedule: list[ScheduleEntry] | None = None,
-    initial_trajectory: np.ndarray | None = None,
-    identifier: str | None = None,
-) -> Result:
-    t0 = time.time()
-    if schedule is None:
-        schedule = DEFAULT_SCHEDULES[score_computation_method]
-
-    # TODO: Initialize from prior distribution based on energy.
+def get_target_paths_by_agent(problem: Problem, dt: float):
+    graph = make_roadmap(problem)
     start_positions = problem.agent_start_positions
     end_positions = problem.agent_end_positions
-
-    trajectory = np.linspace(start_positions, end_positions, num=64, axis=0)
-
-    trajectory[0] = start_positions
-    trajectory[-1] = end_positions
-
-    # Adam parameters.
-    score_m: np.ndarray = np.zeros_like(trajectory)
-    score_v: np.ndarray = np.zeros_like(trajectory)
-    beta1_t = 1.0
-    beta2_t = 1.0
-
-    if score_computation_method in [
-        ScoreComputationMethod.VORONOI_GUIDANCE,
-        ScoreComputationMethod.BOUNDARY_INTEGRALS,
-    ]:
-        obstacle_boundaries = compute_obstacle_boundaries(problem)
-
-    trajectories = []
-
-    dt = 1.0
-
-    graph, vertices = make_roadmap(problem)
     target_paths_by_agent = []
     for agent_index in range(problem.num_agents):
         paths = generate_paths(
             graph,
-            vertices,
             start_positions[agent_index],
             end_positions[agent_index],
             num_paths=5,
@@ -198,7 +166,48 @@ def solve(
                 )
                 paths_interpolated.append(path)
         target_paths_by_agent.append(paths_interpolated)
+
+    return target_paths_by_agent
+
+
+def solve(
+    problem: Problem,
+    score_computation_method: ScoreComputationMethod,
+    optimizer_options: OptimizerOptions = OptimizerOptions(),
+    schedule: list[ScheduleEntry] | None = None,
+    initial_trajectory: np.ndarray | None = None,
+    identifier: str | None = None,
+    constraints: "list[CBSConstraint] | None" = None,
+) -> Result:
+    t0 = time.time()
+    if schedule is None:
+        schedule = DEFAULT_SCHEDULES[score_computation_method]
+
+    # TODO: Initialize from prior distribution based on energy.
+    start_positions = problem.agent_start_positions
+    end_positions = problem.agent_end_positions
+
+    trajectory = np.linspace(start_positions, end_positions, num=64, axis=0)
+
+    trajectory[0] = start_positions
+    trajectory[-1] = end_positions
+
+    # Adam parameters.
+    score_m: np.ndarray = np.zeros_like(trajectory)
+    score_v: np.ndarray = np.zeros_like(trajectory)
+    beta1_t = 1.0
+    beta2_t = 1.0
+
+    if score_computation_method in [
+        ScoreComputationMethod.VORONOI_GUIDANCE,
+        ScoreComputationMethod.BOUNDARY_INTEGRALS,
+    ]:
+        obstacle_boundaries = compute_obstacle_boundaries(problem)
+
+    trajectories = []
+
     # initialize trajectory to the first path for each agent
+    target_paths_by_agent = get_target_paths_by_agent(problem, dt=1.0)
     for agent_index in range(problem.num_agents):
         trajectory[:, agent_index, :] = target_paths_by_agent[agent_index][0]
 
