@@ -187,7 +187,6 @@ def solve(
     score_computation_method: ScoreComputationMethod,
     optimizer_options: OptimizerOptions = OptimizerOptions(),
     schedule: list[ScheduleEntry] | None = None,
-    identifier: str | None = None,
     initial_paths: list[np.ndarray] | None = None,
 ) -> Result:
     t0 = time.time()
@@ -339,6 +338,6 @@ def solve(
     return Result(
         solve_time=solve_time,
         trajectories=trajectories,
-        identifier=identifier,
+        identifier=problem.identifier,
         constraint_satisfaction=constraint_satisfaction,
     )

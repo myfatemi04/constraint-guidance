@@ -1,8 +1,8 @@
 import heapq
 import json
+import time
 from dataclasses import dataclass
 
-import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 
@@ -16,7 +16,6 @@ from ael.solve import (
     solve,
 )
 from ael.visgraphprior import make_roadmap
-from ael.visualize import visualize
 
 
 @dataclass
@@ -75,6 +74,7 @@ def cbs_spatial_approximation(
     max_tries = 10
     tries = 0
     result: Result | None = None
+    t0 = time.time()
 
     while len(nodes) > 0:
         tries += 1
@@ -96,18 +96,22 @@ def cbs_spatial_approximation(
         )
         # Find the earliest constraint violation.
         violation_indices = np.argwhere(aa_constraint_residuals_T_A_A > 1e-4)
-        print("visualizing")
-        # Visualize result.
-        visualize(problem, plt.gca(), agent_positions=result.trajectories[-1])
         traj = result.trajectories[-1]
-        # mark the first violation index
-        if violation_indices.shape[0] > 0:
-            t, a1, a2 = violation_indices[0]
-            plt.plot(traj[t, [a1, a2], 0], traj[t, [a1, a2], 1], "ro", markersize=10)
-        plt.show()
+
+        # import matplotlib.pyplot as plt
+        # print("visualizing")
+        # Visualize result.
+        # visualize(problem, plt.gca(), agent_positions=result.trajectories[-1])
+        # # mark the first violation index
+        # if violation_indices.shape[0] > 0:
+        #     t, a1, a2 = violation_indices[0]
+        #     plt.plot(traj[t, [a1, a2], 0], traj[t, [a1, a2], 1], "ro", markersize=10)
+        # plt.show()
 
         if violation_indices.shape[0] == 0:
             # No constraint violations, return this solution.
+            t1 = time.time()
+            result.solve_time = t1 - t0
             return result
         else:
             t, a1_, a2_ = violation_indices[0]
@@ -143,6 +147,9 @@ def cbs_spatial_approximation(
             add_cbs_subnodes(a2_, a1_)
 
     assert result is not None
+
+    t1 = time.time()
+    result.solve_time = t1 - t0
     return result
 
 

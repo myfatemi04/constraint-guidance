@@ -5,6 +5,8 @@ build/
 dist/
 wheels/
 *.egg-info
+data_trajectories
+*.tar.xz
 
 # Virtual environments
 .venv

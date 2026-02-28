@@ -1,3 +1,4 @@
+import enum
 import json
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -20,9 +21,20 @@ from ael.solve import (
 )
 
 
+class HighLevelSearchMethod(enum.Enum):
+    none = "none"
+    cbs_spatial_approximation = "cbs_spatial_approximation"
+
+
 @dataclass
 class MainArgs:
-    score_computation_method: ScoreComputationMethod
+    score_computation_method: ScoreComputationMethod = (
+        ScoreComputationMethod.APPROXIMATE_V0
+    )
+
+    highlevel_search: HighLevelSearchMethod = (
+        HighLevelSearchMethod.cbs_spatial_approximation
+    )
 
     problem_set: str = "dense"
     """ Loads problems from `./instances_data/instances_{problem_set}.json`. Can be comma-separated list. """
@@ -36,8 +48,8 @@ class MainArgs:
     schedule: str = "default"
     """ Path to a JSON file specifying the schedule to use, or 'default'. """
 
-    save_dir: str = "./results/{date}/experiment_{time}"
-    """ Path to a directory in which to save results. Allows formatting with `date` and `time` variables, which are formatted as YYYY-mm-dd and HH-MM-SS, respectively. """
+    save_dir: str = "./results/{date}/experiment_{time}_{score_computation_method}_{highlevel_search}"
+    """ Path to a directory in which to save results. Allows formatting with `date`, `time`, `score_computation_method`, `highlevel_search` variables, which are formatted as YYYY-mm-dd and HH-MM-SS, respectively. """
 
     label: str | None = "{problem_set}"
     """ Label to attach to this experiment. Gets appended to the save directory if specified. Can use the {problem_set} and {num_robots} variables. If None, no label is used. """
@@ -46,7 +58,10 @@ class MainArgs:
 def main(args: MainArgs):
     save_dir = Path(
         args.save_dir.format(
-            date=time.strftime("%Y-%m-%d"), time=time.strftime("%H-%M-%S")
+            date=time.strftime("%Y-%m-%d"),
+            time=time.strftime("%H-%M-%S"),
+            score_computation_method=args.score_computation_method.name,
+            highlevel_search=args.highlevel_search.name,
         )
     )
     for problem_set in args.problem_set.split(","):
@@ -84,30 +99,43 @@ def run_problem_set(args: MainArgs, problem_set: str, save_dir: Path):
         "num_robots": [],
     }
 
+    params = {
+        "score_computation_method": args.score_computation_method.name,
+        "highlevel_search": args.highlevel_search.name,
+        "schedule": [entry.__dict__ for entry in schedule],
+        "optimizer": args.optimizer.__dict__,
+    }
+    with open(save_dir / "params.json", "w") as f:
+        json.dump(params, f, indent=4)
+
     with ProcessPoolExecutor() as executor:
         futures = []
-
-        with open(save_dir / "schedule.json", "w") as f:
-            json.dump([entry.__dict__ for entry in schedule], f, indent=4)
-
-        with open(save_dir / "optimizer.json", "w") as f:
-            json.dump(args.optimizer.__dict__, f, indent=4)
 
         for i, problem in enumerate(problems):
             problem.identifier = f"{problem_set}_{i}"
             if args.num_robots != "any" and problem.num_agents != args.num_robots:
                 continue
 
-            futures.append(
-                executor.submit(
-                    solve,
+            if args.highlevel_search == HighLevelSearchMethod.cbs_spatial_approximation:
+                from ael.cbs_spatial_approximation import cbs_spatial_approximation
+
+                future = executor.submit(
+                    cbs_spatial_approximation,
                     problem,
                     args.score_computation_method,
-                    args.optimizer,
-                    schedule=schedule,
-                    identifier=problem.identifier,
+                    schedule,
                 )
-            )
+                futures.append(future)
+            elif args.highlevel_search == HighLevelSearchMethod.none:
+                futures.append(
+                    executor.submit(
+                        solve,
+                        problem,
+                        args.score_computation_method,
+                        args.optimizer,
+                        schedule,
+                    )
+                )
 
         for future in tqdm.tqdm(as_completed(futures), total=len(futures)):
             result = cast(Result, future.result())
