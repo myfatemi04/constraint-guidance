@@ -556,7 +556,6 @@ class MPPITrajectoryEvaluation:
     agent_obstacle: np.ndarray
     velocity: np.ndarray
     kinetic_energy: np.ndarray
-    overall: np.ndarray
 
 
 def evaluate_trajectory_unscaled_probabilities_factorized(
@@ -580,12 +579,12 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
     b = noise_B_T_A_D.shape[0]
     t = trajectory_T_A_D.shape[0]
     a = trajectory_T_A_D.shape[1]
+    o = problem.num_obstacles
     result = {
-        "agent_agent": np.ones((b, t, a), dtype=np.float32),
-        "agent_obstacle": np.ones((b, t, a), dtype=np.float32),
+        "agent_agent": np.ones((b, t, a, a), dtype=np.float32),
+        "agent_obstacle": np.ones((b, t, a, o), dtype=np.float32),
         "velocity": np.ones((b, t, a), dtype=np.float32),
         "kinetic_energy": np.ones((b, t, a), dtype=np.float32),
-        "overall": np.ones((b, t, a), dtype=np.float32),
     }
 
     # (b, t, a, a)
@@ -626,8 +625,8 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
         np.sqrt(velocity_squared_per_deviation_forward) - problem.agent_max_speeds
     )
 
-    result["agent_agent"] *= agent_agent_ok.all(axis=-1).astype(np.float32)
-    result["agent_obstacle"] *= agent_obstacle_ok.all(axis=-1).astype(np.float32)
+    result["agent_agent"] = agent_agent_ok.astype(np.float32)
+    result["agent_obstacle"] = agent_obstacle_ok.astype(np.float32)
 
     velocity_ok_reverse = (
         velocity_constraint_residual_per_deviation_reverse
@@ -686,12 +685,6 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
         agent_obstacle=result["agent_obstacle"],
         velocity=result["velocity"],
         kinetic_energy=result["kinetic_energy"],
-        overall=(
-            result["kinetic_energy"]
-            * result["agent_agent"]
-            * result["agent_obstacle"]
-            * result["velocity"]
-        ),
     )
 
 
@@ -729,8 +722,8 @@ def compute_score_mppi_factorized(
         np.sum(evaluation.kinetic_energy, axis=0) + eps
     )
     total_weights = (
-        agent_agent_weights
-        + agent_obstacle_weights
+        agent_agent_weights.sum(axis=-1)
+        + agent_obstacle_weights.sum(axis=-1)
         + velocity_weights
         + kinetic_energy_weights
     )
