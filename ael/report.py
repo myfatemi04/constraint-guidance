@@ -106,9 +106,17 @@ if __name__ == "__main__":
             k: f"results/2026-02-28/experiment_07-31-02/{k}/table.csv"
             for k in ["dense", "simple", "shelf", "connected_room"]
         },
+        "007_more_factorized_mppi": {
+            k: f"results/2026-02-28/experiment_08-25-45/{k}/table.csv"
+            for k in ["dense", "simple", "shelf", "connected_room"]
+        },
+        "008_reproduce_005": {
+            k: f"results/2026-02-28/experiment_09-55-02/{k}/table.csv"
+            for k in ["dense", "simple", "shelf", "connected_room"]
+        },
     }
 
-    name = "006_factorized_mppi"
+    name = "008_reproduce_005"
     paths = path_groups[name]
 
     df_and_title = [
