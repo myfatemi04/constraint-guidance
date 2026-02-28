@@ -5,8 +5,9 @@ The main solving algorithm.
 import enum
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
+import networkx as nx
 import numpy as np
 from loguru import logger
 
@@ -23,9 +24,6 @@ from ael.score_function import (
     compute_score_mppi_unfactorized,
 )
 from ael.visgraphprior import generate_paths, interpolate, make_roadmap
-
-if TYPE_CHECKING:
-    from ael.cbs_spatial_approximation import CBSConstraint
 
 
 @dataclass
@@ -120,8 +118,20 @@ DEFAULT_SCHEDULES: dict[ScoreComputationMethod, list[ScheduleEntry]] = {
 }
 
 
-def get_target_paths_by_agent(problem: Problem, dt: float):
-    graph = make_roadmap(problem)
+def get_initial_paths_by_agent(
+    problem: Problem, dt: float, graph: nx.Graph | None = None
+):
+    """
+    This function returns an initial path for an agent, allowing the use of a custom graph.
+    - `problem`: specifies obstacle locations, start and end positions, etc.
+    - `dt`: the time step for interpolation of the paths.
+    - `graph`: an optional pre-constructed graph to use for pathfinding. If None, a new graph will be constructed using `make_roadmap`.
+
+    We allow supplying a custom `graph` so that conflict-based constraints can be applied.
+    """
+    if graph is None:
+        graph = make_roadmap(problem)
+
     start_positions = problem.agent_start_positions
     end_positions = problem.agent_end_positions
     target_paths_by_agent = []
@@ -145,6 +155,8 @@ def get_target_paths_by_agent(problem: Problem, dt: float):
                 speed = max(speed, min_speed)
                 interpolated = interpolate(path, dt, speed)
                 interpolated_path_timesteps = interpolated.shape[0]
+
+                # Check if this fits within the time horizon, if not, skip it.
                 if interpolated_path_timesteps > problem.num_timesteps:
                     print(interpolated_path_timesteps)
                     continue
@@ -165,9 +177,9 @@ def get_target_paths_by_agent(problem: Problem, dt: float):
                     num=problem.num_timesteps,
                 )
                 paths_interpolated.append(path)
-        target_paths_by_agent.append(paths_interpolated)
+        target_paths_by_agent.append(paths_interpolated[0])
 
-    return target_paths_by_agent
+    return np.array(target_paths_by_agent)
 
 
 def solve(
@@ -175,9 +187,8 @@ def solve(
     score_computation_method: ScoreComputationMethod,
     optimizer_options: OptimizerOptions = OptimizerOptions(),
     schedule: list[ScheduleEntry] | None = None,
-    initial_trajectory: np.ndarray | None = None,
     identifier: str | None = None,
-    constraints: "list[CBSConstraint] | None" = None,
+    initial_paths: list[np.ndarray] | None = None,
 ) -> Result:
     t0 = time.time()
     if schedule is None:
@@ -207,9 +218,13 @@ def solve(
     trajectories = []
 
     # initialize trajectory to the first path for each agent
-    target_paths_by_agent = get_target_paths_by_agent(problem, dt=1.0)
-    for agent_index in range(problem.num_agents):
-        trajectory[:, agent_index, :] = target_paths_by_agent[agent_index][0]
+    if initial_paths is not None:
+        for agent_index in range(problem.num_agents):
+            trajectory[:, agent_index, :] = initial_paths[agent_index]
+    else:
+        target_paths_by_agent = get_initial_paths_by_agent(problem, dt=1.0)
+        for agent_index in range(problem.num_agents):
+            trajectory[:, agent_index, :] = target_paths_by_agent[agent_index]
 
     for schedule_entry in schedule:
         for step in range(schedule_entry.num_steps):
