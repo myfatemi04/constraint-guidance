@@ -80,14 +80,14 @@ class ScoreComputationMethod(str, enum.Enum):
     VORONOI_GUIDANCE = "voronoi_guidance"
 
 
-STEPS = 500
+STEPS = 100
 DEFAULT_SCHEDULE_APPROXIMATE_V0 = [
     ScheduleEntry(
         sigma=0.1 * (0.01 / 0.1) ** (i / STEPS),
         step_size=0.03 * (0.01 / 0.03) ** (i / STEPS),
         num_steps=1,
         score_fn_kwargs=dict(
-            kinetic_weight=10 * (1 / 10) ** (i / STEPS), n_integral=50
+            kinetic_weight=10 * (1 / 10) ** (i / STEPS), n_integral=10
         ),
     )
     for i in range(STEPS)

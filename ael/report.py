@@ -99,9 +99,13 @@ if __name__ == "__main__":
         k: f"results/2026-02-26/experiment_19-42-48/{k}/table.csv"
         for k in ["dense", "simple", "shelf", "connected_room"]
     }
+    paths_5 = {
+        k: f"results/2026-02-27/experiment_19-04-11/{k}/table.csv"
+        for k in ["dense", "simple", "shelf", "connected_room"]
+    }
 
-    paths = paths_4
-    name = "voronoi_init_and_velocity_constraint"
+    paths = paths_0
+    name = "p0"
 
     dense_df = pd.read_csv(paths["dense"])
     connected_room_df = pd.read_csv(paths["connected_room"])

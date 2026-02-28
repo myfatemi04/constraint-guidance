@@ -560,8 +560,8 @@ class MPPITrajectoryEvaluation:
 
 
 def evaluate_trajectory_unscaled_probabilities_factorized(
-    trajectory: np.ndarray,
-    noise_batch: np.ndarray,
+    trajectory_T_A_D: np.ndarray,
+    noise_B_T_A_D: np.ndarray,
     problem: Problem[np.ndarray],
     agent_agent_constraint_tolerance: float,
     agent_obstacle_constraint_tolerance: float,
@@ -577,9 +577,9 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
     delta. The normalization factor cancels out, which is why the delta alone is sufficient.
     """
 
-    b = noise_batch.shape[0]
-    t = trajectory.shape[0]
-    a = trajectory.shape[1]
+    b = noise_B_T_A_D.shape[0]
+    t = trajectory_T_A_D.shape[0]
+    a = trajectory_T_A_D.shape[1]
     result = {
         "agent_agent": np.ones((b, t, a), dtype=np.float32),
         "agent_obstacle": np.ones((b, t, a), dtype=np.float32),
@@ -590,23 +590,29 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
 
     # (b, t, a, a)
     agent_agent_ok = (
-        compute_agent_agent_constraint_residuals(problem, noise_batch + trajectory)
+        compute_agent_agent_constraint_residuals(
+            problem, noise_B_T_A_D + trajectory_T_A_D
+        )
         <= agent_agent_constraint_tolerance
     )
     # (b, t, a, o)
     agent_obstacle_ok = (
-        compute_agent_obstacle_constraint_residuals(problem, noise_batch + trajectory)
+        compute_agent_obstacle_constraint_residuals(
+            problem, noise_B_T_A_D + trajectory_T_A_D
+        )
         <= agent_obstacle_constraint_tolerance
     )
 
-    velocity_squared_baseline = ((trajectory[1:] - trajectory[:-1]) ** 2).sum(axis=-1)
+    velocity_squared_baseline = (
+        (trajectory_T_A_D[1:] - trajectory_T_A_D[:-1]) ** 2
+    ).sum(axis=-1)
     # Same endpoint, but adding noise to starting point. The start point doesn't matter because it's fixed
     # to the agent's current position.
     velocity_squared_per_deviation_reverse = (
-        ((trajectory[1:] + noise_batch[:, 1:]) - trajectory[:-1]) ** 2
+        ((trajectory_T_A_D[1:] + noise_B_T_A_D[:, 1:]) - trajectory_T_A_D[:-1]) ** 2
     ).sum(axis=-1)
     velocity_squared_per_deviation_forward = (
-        ((trajectory[1:]) - (trajectory[:-1] + noise_batch[:, :-1])) ** 2
+        ((trajectory_T_A_D[1:]) - (trajectory_T_A_D[:-1] + noise_B_T_A_D[:, :-1])) ** 2
     ).sum(axis=-1)
 
     # (b, t, a)
@@ -688,7 +694,7 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
 
 
 def compute_score_mppi_factorized(
-    trajectory: np.ndarray,
+    trajectory_T_A_D: np.ndarray,
     problem: Problem[np.ndarray],
     sigma: float,
     num_samples: int,
@@ -696,10 +702,12 @@ def compute_score_mppi_factorized(
     agent_obstacle_constraint_tolerance: float,
     velocity_constraint_tolerance: float,
 ):
-    noise = np.random.normal(size=(num_samples, *trajectory.shape)) * sigma
+    noise_B_T_A_D = (
+        np.random.normal(size=(num_samples, *trajectory_T_A_D.shape)) * sigma
+    )
     evaluation = evaluate_trajectory_unscaled_probabilities_factorized(
-        trajectory,
-        noise,
+        trajectory_T_A_D,
+        noise_B_T_A_D,
         problem,
         agent_agent_constraint_tolerance,
         agent_obstacle_constraint_tolerance,
@@ -713,7 +721,7 @@ def compute_score_mppi_factorized(
     # acceptance = evaluation.overall > 0
     # print(acceptance.sum() / np.prod(evaluation.overall.shape))
     # score = 1 / sigma**2 * np.sum(noise * weights[:, :, :, None], axis=0)
-    score = np.sum(noise * weights[:, :, :, None], axis=0)
+    score = np.sum(noise_B_T_A_D * weights[:, :, :, None], axis=0)
     return score
 
 

@@ -105,6 +105,7 @@ def run_problem_set(args: MainArgs, problem_set: str, save_dir: Path):
                     args.score_computation_method,
                     args.optimizer,
                     schedule=schedule,
+                    identifier=problem.identifier,
                 )
             )
 
