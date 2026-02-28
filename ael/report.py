@@ -1,5 +1,6 @@
 """For generating scientific figures."""
 
+import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -70,55 +71,57 @@ def generate_simple_latex_table(
 
 
 if __name__ == "__main__":
-    # without Voronoi initialization
-    paths_0 = {
-        "dense": "results/2026-01-29/experiment_16-18-37_dense_num_robots=any/table.csv",
-        "connected_room": "results/2026-01-30/experiment_13-32-20_connected_room_num_robots=any/table.csv",
-        "shelf": "results/2026-01-30/experiment_13-27-10_shelf_num_robots=any/table.csv",
-        "simple": "results/2026-01-29/experiment_16-44-37_simple_num_robots=any/table.csv",
-    }
-    # with Voronoi initialization
-    paths_1 = {
-        "connected_room": "results/2026-02-24/experiment_07-22-43_connected_room_num_robots=any/table.csv",
-        "dense": "results/2026-02-24/experiment_07-31-38_dense_num_robots=any/table.csv",
-        "shelf": "results/2026-02-24/experiment_07-36-12_shelf_num_robots=any/table.csv",
-        "simple": "results/2026-02-24/experiment_07-39-32_simple_num_robots=any/table.csv",
-    }
-    # with Voronoi initialization and better schedule
-    paths_2 = paths_1 | {
-        k: f"results/2026-02-24/experiment_08-04-06/{k}/table.csv"
-        for k in ["dense", "simple", "shelf", "connected_room"]
-    }
-    # better schedule
-    paths_3 = paths_1 | {
-        k: f"results/2026-02-24/experiment_08-26-02/{k}/table.csv"
-        for k in ["dense", "simple", "shelf", "connected_room"]
-    }
-    # add velocity constraint
-    paths_4 = paths_1 | {
-        k: f"results/2026-02-26/experiment_19-42-48/{k}/table.csv"
-        for k in ["dense", "simple", "shelf", "connected_room"]
-    }
-    paths_5 = {
-        k: f"results/2026-02-27/experiment_19-04-11/{k}/table.csv"
-        for k in ["dense", "simple", "shelf", "connected_room"]
+    path_groups = {
+        # without Voronoi initialization
+        "000_no_voronoi_initialization": {
+            "dense": "results/2026-01-29/experiment_16-18-37_dense_num_robots=any/table.csv",
+            "connected_room": "results/2026-01-30/experiment_13-32-20_connected_room_num_robots=any/table.csv",
+            "shelf": "results/2026-01-30/experiment_13-27-10_shelf_num_robots=any/table.csv",
+            "simple": "results/2026-01-29/experiment_16-44-37_simple_num_robots=any/table.csv",
+        },
+        # with Voronoi initialization
+        "001_voronoi_initialization": {
+            "connected_room": "results/2026-02-24/experiment_07-22-43_connected_room_num_robots=any/table.csv",
+            "dense": "results/2026-02-24/experiment_07-31-38_dense_num_robots=any/table.csv",
+            "shelf": "results/2026-02-24/experiment_07-36-12_shelf_num_robots=any/table.csv",
+            "simple": "results/2026-02-24/experiment_07-39-32_simple_num_robots=any/table.csv",
+        },
+        "002_better_schedule": {
+            k: f"results/2026-02-24/experiment_08-04-06/{k}/table.csv"
+            for k in ["dense", "simple", "shelf", "connected_room"]
+        },
+        "003_better_schedule_2": {
+            k: f"results/2026-02-24/experiment_08-26-02/{k}/table.csv"
+            for k in ["dense", "simple", "shelf", "connected_room"]
+        },
+        "004_velocity_constraint_wrong_clipping": {
+            k: f"results/2026-02-26/experiment_19-42-48/{k}/table.csv"
+            for k in ["dense", "simple", "shelf", "connected_room"]
+        },
+        "005_velocity_constraint": {
+            k: f"results/2026-02-27/experiment_19-04-11/{k}/table.csv"
+            for k in ["dense", "simple", "shelf", "connected_room"]
+        },
+        "006_factorized_mppi": {
+            k: f"results/2026-02-28/experiment_07-31-02/{k}/table.csv"
+            for k in ["dense", "simple", "shelf", "connected_room"]
+        },
     }
 
-    paths = paths_0
-    name = "p0"
+    name = "006_factorized_mppi"
+    paths = path_groups[name]
 
-    dense_df = pd.read_csv(paths["dense"])
-    connected_room_df = pd.read_csv(paths["connected_room"])
-    shelf_df = pd.read_csv(paths["shelf"])
-    simple_df = pd.read_csv(paths["simple"])
+    df_and_title = [
+        (pd.read_csv(paths[key]), title)
+        for key, title in zip(
+            ["dense", "connected_room", "shelf", "simple"],
+            ["Dense", "Connected Room", "Shelf", "Simple"],
+        )
+        if os.path.exists(paths[key])
+    ]
+
     figures_dir = Path("figures") / name
     figures_dir.mkdir(parents=True, exist_ok=True)
-    df_and_title = [
-        (dense_df, "Dense"),
-        (connected_room_df, "Connected Room"),
-        (shelf_df, "Shelf"),
-        (simple_df, "Simple"),
-    ]
 
     for df, title in df_and_title:
         generate_constraint_satisfaction_figure(df, title)

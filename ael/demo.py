@@ -118,6 +118,7 @@ def store_result(
             str(save_dir / "optimization_process.gif"),
         ],
         stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     subprocess.call(
         [
@@ -127,6 +128,7 @@ def store_result(
             str(save_dir / "final_trajectory.gif"),
         ],
         stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
 
 

@@ -129,28 +129,11 @@ def solve(
     if schedule is None:
         schedule = DEFAULT_SCHEDULES[score_computation_method]
 
-    # if score_computation_method in [
-    #     ScoreComputationMethod.UNFACTORIZED_MPPI,
-    #     ScoreComputationMethod.FACTORIZED_MPPI,
-    # ]:
-    #     # step_size_ok = all(s.step_size == 1 for s in schedule)
-    #     step_size_ok = True
-    #     assert optimizer_options.kind == "sgd" and step_size_ok, (
-    #         "MPPI computations require SGD with a step size of 1 for true equivalence."
-    #     )
-
     # TODO: Initialize from prior distribution based on energy.
     start_positions = problem.agent_start_positions
     end_positions = problem.agent_end_positions
 
-    # start_positions = np.zeros((problem.num_agents, 2))
-    # end_positions = np.zeros((problem.num_agents, 2))
-    # start_positions[:, 0] = -1.0
-    # end_positions[:, 0] = -1.0
-    # end_positions[:, 1] = 1.0
-
     trajectory = np.linspace(start_positions, end_positions, num=64, axis=0)
-    # trajectory += np.random.randn(*trajectory.shape) * 0.1
 
     trajectory[0] = start_positions
     trajectory[-1] = end_positions
@@ -171,57 +154,53 @@ def solve(
 
     dt = 1.0
 
-    # if score_computation_method == ScoreComputationMethod.VORONOI_GUIDANCE:
-    if True:
-        graph, vertices = make_roadmap(problem)
-        target_paths_by_agent = []
-        for agent_index in range(problem.num_agents):
-            paths = generate_paths(
-                graph,
-                vertices,
-                start_positions[agent_index],
-                end_positions[agent_index],
-                num_paths=5,
-            )
-            paths_interpolated = []
-            for path in paths:
-                for speed in [
-                    0.2 * problem.agent_max_speeds[agent_index],
-                    0.5 * problem.agent_max_speeds[agent_index],
-                    0.8 * problem.agent_max_speeds[agent_index],
-                    problem.agent_max_speeds[agent_index],
-                ]:
-                    path_length = np.linalg.norm(np.diff(path, axis=0), axis=-1).sum()
-                    min_speed = path_length / (problem.num_timesteps * dt) + 0.01
-                    speed = max(speed, min_speed)
-                    interpolated = interpolate(path, dt, speed)
-                    interpolated_path_timesteps = interpolated.shape[0]
-                    if interpolated_path_timesteps > problem.num_timesteps:
-                        print(interpolated_path_timesteps)
-                        continue
+    graph, vertices = make_roadmap(problem)
+    target_paths_by_agent = []
+    for agent_index in range(problem.num_agents):
+        paths = generate_paths(
+            graph,
+            vertices,
+            start_positions[agent_index],
+            end_positions[agent_index],
+            num_paths=5,
+        )
+        paths_interpolated = []
+        for path in paths:
+            for speed in [
+                0.2 * problem.agent_max_speeds[agent_index],
+                0.5 * problem.agent_max_speeds[agent_index],
+                0.8 * problem.agent_max_speeds[agent_index],
+                problem.agent_max_speeds[agent_index],
+            ]:
+                path_length = np.linalg.norm(np.diff(path, axis=0), axis=-1).sum()
+                min_speed = path_length / (problem.num_timesteps * dt) + 0.01
+                speed = max(speed, min_speed)
+                interpolated = interpolate(path, dt, speed)
+                interpolated_path_timesteps = interpolated.shape[0]
+                if interpolated_path_timesteps > problem.num_timesteps:
+                    print(interpolated_path_timesteps)
+                    continue
 
-                    path = np.zeros((problem.num_timesteps, 2))
-                    path[:interpolated_path_timesteps] = interpolated
-                    path[interpolated_path_timesteps:] = interpolated[-1]
-                    paths_interpolated.append(path)
+                path = np.zeros((problem.num_timesteps, 2))
+                path[:interpolated_path_timesteps] = interpolated
+                path[interpolated_path_timesteps:] = interpolated[-1]
+                paths_interpolated.append(path)
 
-                if len(paths_interpolated) == 0:
-                    logger.warning(
-                        "No path found for agent %d that fits within the time horizon, using straight line path.",
-                        agent_index,
-                    )
-                    path = np.linspace(
-                        start_positions[agent_index],
-                        end_positions[agent_index],
-                        num=problem.num_timesteps,
-                    )
-                    paths_interpolated.append(path)
-            target_paths_by_agent.append(paths_interpolated)
-        # initialize trajectory to the first path for each agent
-        for agent_index in range(problem.num_agents):
-            trajectory[:, agent_index, :] = target_paths_by_agent[agent_index][0]
-    else:
-        target_paths_by_agent = None
+            if len(paths_interpolated) == 0:
+                logger.warning(
+                    "No path found for agent %d that fits within the time horizon, using straight line path.",
+                    agent_index,
+                )
+                path = np.linspace(
+                    start_positions[agent_index],
+                    end_positions[agent_index],
+                    num=problem.num_timesteps,
+                )
+                paths_interpolated.append(path)
+        target_paths_by_agent.append(paths_interpolated)
+    # initialize trajectory to the first path for each agent
+    for agent_index in range(problem.num_agents):
+        trajectory[:, agent_index, :] = target_paths_by_agent[agent_index][0]
 
     for schedule_entry in schedule:
         for step in range(schedule_entry.num_steps):
