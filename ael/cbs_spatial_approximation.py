@@ -9,6 +9,7 @@ import numpy as np
 from ael.problem import Problem
 from ael.solve import (
     DEFAULT_SCHEDULES,
+    Result,
     ScheduleEntry,
     ScoreComputationMethod,
     get_initial_paths_by_agent,
@@ -33,24 +34,26 @@ class CBSNode:
 
 
 def make_constrained_graph(constraints: list[CBSConstraint], graph: nx.Graph):
-    g = graph.copy()
-    for n in g.nodes():
+    constrained_graph = graph.copy()
+    for n in graph.nodes():
         if any(
             [
-                np.linalg.norm(g.nodes[n]["pos"] - constraint.disallowed_location)
+                np.linalg.norm(
+                    constrained_graph.nodes[n]["pos"] - constraint.disallowed_location
+                )
                 < constraint.disallowed_radius
                 for constraint in constraints
             ]
         ):
-            g.remove_node(n)
-    return g
+            constrained_graph.remove_node(n)
+    return constrained_graph
 
 
 def cbs_spatial_approximation(
     problem: Problem,
     score_computation_method: ScoreComputationMethod,
     schedule: list[ScheduleEntry],
-):
+) -> Result:
     graph = make_roadmap(problem)
     initial_paths = get_initial_paths_by_agent(problem, dt=1.0, graph=graph)
     initial_cost = (
@@ -61,10 +64,25 @@ def cbs_spatial_approximation(
         .sum(axis=-1)
     )
 
-    nodes = [(initial_cost, CBSNode(constraints=[], initial_paths=initial_paths))]
+    nodes = [
+        (
+            initial_cost,
+            # this is so we don't need to implement tie-breaking logic in the heap, since CBSNodes aren't directly comparable
+            np.random.rand(),
+            CBSNode(constraints=[], initial_paths=initial_paths),
+        )
+    ]
+    max_tries = 10
+    tries = 0
+    result: Result | None = None
 
     while len(nodes) > 0:
-        cost, node = heapq.heappop(nodes)
+        tries += 1
+        if tries > max_tries:
+            print("Reached max tries, returning best effort solution.")
+            # breaking out of the loop will return the best effort solution, which may still have constraint violations.
+            break
+        cost, _, node = heapq.heappop(nodes)
         # Try to solve this node.
         result = solve(
             problem,
@@ -98,16 +116,18 @@ def cbs_spatial_approximation(
                 # Create a new constraint for a1 and add it to the list of constraints.
                 r = problem.agent_radii[a1] + problem.agent_radii[a2]
                 new_constraint_a1 = CBSConstraint(
-                    agent_i=a1, disallowed_location=traj[a2, t], disallowed_radius=r
+                    agent_i=a1, disallowed_location=traj[t, a2], disallowed_radius=r
                 )
                 new_constraints_a1 = node.constraints + [new_constraint_a1]
                 constrained_graph_a1 = make_constrained_graph(new_constraints_a1, graph)
-                constrained_paths_a1 = get_initial_paths_by_agent(
+                next_initial_paths = node.initial_paths.copy()
+                next_initial_paths[a1] = get_initial_paths_by_agent(
                     problem, dt=1.0, graph=constrained_graph_a1
-                )
+                )[a1]
                 cost_a1 = (
                     np.linalg.norm(
-                        constrained_paths_a1[1:] - constrained_paths_a1[:-1], axis=-1
+                        next_initial_paths[a1][1:] - next_initial_paths[a1][:-1],
+                        axis=-1,
                     )
                     # Sum across timesteps.
                     .sum(axis=-1)
@@ -115,12 +135,15 @@ def cbs_spatial_approximation(
                     .sum(axis=-1)
                 )
                 node_a1 = CBSNode(
-                    constraints=new_constraints_a1, initial_paths=constrained_paths_a1
+                    constraints=new_constraints_a1, initial_paths=next_initial_paths
                 )
-                heapq.heappush(nodes, (cost_a1, node_a1))
+                heapq.heappush(nodes, (cost_a1, np.random.rand(), node_a1))
 
             add_cbs_subnodes(a1_, a2_)
             add_cbs_subnodes(a2_, a1_)
+
+    assert result is not None
+    return result
 
 
 if __name__ == "__main__":
