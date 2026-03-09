@@ -71,7 +71,7 @@ def cbs_spatial_approximation(
             CBSNode(constraints=[], initial_paths=initial_paths),
         )
     ]
-    max_tries = 10
+    max_tries = 128
     tries = 0
     result: Result | None = None
     t0 = time.time()
