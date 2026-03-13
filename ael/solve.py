@@ -171,7 +171,6 @@ def solve(
                         trajectory,
                         sigma=schedule_entry.sigma,
                         problem=problem,
-                        include_obstacles=True,
                         **(schedule_entry.score_fn_kwargs or {}),
                     )
                 case ScoreComputationMethod.UNFACTORIZED_MPPI:
@@ -202,7 +201,6 @@ def solve(
                         trajectory,
                         problem=problem,
                         sigma=schedule_entry.sigma,
-                        include_obstacles=True,
                         **(schedule_entry.score_fn_kwargs or {}),
                     )
                     # add Voronoi guidance

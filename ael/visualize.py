@@ -18,13 +18,28 @@ def visualize(
     start_markersize: float = 10.0,
     end_markersize: float = 10.0,
 ):
-    # Plot the obstacles
+    # Plot the circular obstacles
     for obs_index in range(problem.num_circular_obstacles):
         x, y = problem.circular_obstacle_positions[obs_index].tolist()
         ax.add_patch(
             patches.Circle(
                 (x, y),
                 problem.circular_obstacle_radii[obs_index].item(),
+                color="r",
+                alpha=0.5,
+            )
+        )
+
+    # Plot the axis-aligned box obstacles
+    for obs_index in range(problem.num_axis_aligned_box_obstacles):
+        (x_low, x_high), (y_low, y_high) = problem.axis_aligned_box_obstacle_bounds[
+            obs_index
+        ].tolist()
+        ax.add_patch(
+            patches.Rectangle(
+                (x_low, y_low),
+                x_high - x_low,
+                y_high - y_low,
                 color="r",
                 alpha=0.5,
             )

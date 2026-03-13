@@ -69,6 +69,10 @@ class Problem(Generic[TensorType]):
     def num_circular_obstacles(self):
         return self.circular_obstacle_positions.shape[0]
 
+    @property
+    def num_axis_aligned_box_obstacles(self):
+        return self.axis_aligned_box_obstacle_bounds.shape[0]
+
     @staticmethod
     def _as_numpy(array: torch.Tensor | np.ndarray) -> np.ndarray:
         if isinstance(array, np.ndarray):
@@ -99,8 +103,11 @@ class Problem(Generic[TensorType]):
             agent_radii=_tensor(entry["agents"]["radii"], type=type),
             agent_max_speeds=_tensor(entry["agents"]["max_speeds"], type=type),
             agent_reference_trajectory=None,
-            obstacle_positions=_tensor(entry["obstacles"]["positions"], type=type),
-            obstacle_radii=_tensor(entry["obstacles"]["radii"], type=type),
+            circular_obstacle_positions=_tensor(
+                entry["obstacles"]["positions"], type=type
+            ),
+            circular_obstacle_radii=_tensor(entry["obstacles"]["radii"], type=type),
+            axis_aligned_box_obstacle_bounds=_tensor(np.array([]), type=type),
             identifier=f"sample_{entry['sample_idx']}"
             if "sample_idx" in entry
             else None,

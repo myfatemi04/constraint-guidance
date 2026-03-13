@@ -5,7 +5,7 @@ import numpy as np
 
 from ael.constraint_evaluation import (
     compute_agent_agent_constraint_residuals,
-    compute_agent_obstacle_constraint_residuals,
+    compute_agent_circular_obstacle_constraint_residuals,
     compute_constraint_residuals,
 )
 from ael.problem import Problem
@@ -340,7 +340,7 @@ def compute_kinetic_energy_score(xy_T_B_D: np.ndarray, sigma):
     )
 
 
-def compute_agent_obstacle_score_from_problem(
+def compute_agent_circular_obstacle_and_agent_score_from_problem(
     problem: Problem, trajectory: np.ndarray, sigma: float, n_integral: int
 ):
     """
@@ -445,22 +445,25 @@ def compute_agent_obstacle_score_from_problem(
     return score_T_A_O_D, score_T_A1_A2_D
 
 
-def compute_agent_obstacle_score_rectangular_obstacles(xy_T_B_D, boxes_O_D_2, sigma):
-    T, B, D = xy_T_B_D.shape
-    xy_TB_1_D = xy_T_B_D.reshape(T * B, 1, D)
-    boxes_1_O_D_2 = boxes_O_D_2.reshape(1, boxes_O_D_2.shape[0], D, 2)
-    score_TB_O_D, likelihood_TB_O = box_exclusion_score_and_likelihood(
-        xy_TB_1_D, boxes_1_O_D_2, sigma
+def compute_agent_obstacle_score_rectangular_obstacles(
+    xy_T_A_D, boxes_O_D_2, agent_radii, sigma
+):
+    T, A, D = xy_T_A_D.shape
+    xy_T_A_1_D = xy_T_A_D.reshape(T, A, 1, D)
+    boxes_A_O_D_2 = np.repeat(boxes_O_D_2[None], A, axis=0)
+    boxes_A_O_D_2[..., 0, :] -= agent_radii[:, None]
+    boxes_A_O_D_2[..., 1, :] += agent_radii[:, None]
+    score_T_A_O_D, likelihood_T_A_O = box_exclusion_score_and_likelihood(
+        xy_T_A_1_D, boxes_A_O_D_2, sigma
     )
-    score_T_B_D = score_TB_O_D.sum(axis=1).reshape(T, B, D)
-    return score_T_B_D
+    score_T_A_D = score_T_A_O_D.sum(axis=-2)
+    return score_T_A_D
 
 
 def compute_score(
     xy_T_B_D,
     problem: Problem[np.ndarray],
     sigma,
-    include_obstacles,
     kinetic_weight,
     n_integral,
 ):
@@ -470,12 +473,18 @@ def compute_score(
 
     score_T_B_D = np.zeros_like(xy_T_B_D)
 
-    if include_obstacles:
-        # Don't compute self-interactions.
-        score_T_A_O_D, score_T_A1_A2_D = compute_agent_obstacle_score_from_problem(
+    score_T_A_O_D, score_T_A1_A2_D = (
+        compute_agent_circular_obstacle_and_agent_score_from_problem(
             problem, xy_T_B_D, sigma, n_integral=n_integral
         )
-        score_T_B_D += score_T_A1_A2_D.sum(axis=2) + score_T_A_O_D.sum(axis=2)
+    )
+    score_T_B_D += score_T_A1_A2_D.sum(axis=2) + score_T_A_O_D.sum(axis=2)
+    score_T_B_D += compute_agent_obstacle_score_rectangular_obstacles(
+        xy_T_B_D,
+        problem.axis_aligned_box_obstacle_bounds,
+        problem.agent_radii,
+        sigma,
+    )
 
     score_T_B_D += compute_velocity_score_batched_helper(
         xy_T_B_D,
@@ -609,7 +618,7 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
     )
     # (b, t, a, o)
     agent_obstacle_ok = (
-        compute_agent_obstacle_constraint_residuals(
+        compute_agent_circular_obstacle_constraint_residuals(
             problem, noise_B_T_A_D + trajectory_T_A_D
         )
         <= agent_obstacle_constraint_tolerance

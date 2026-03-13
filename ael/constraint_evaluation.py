@@ -17,7 +17,7 @@ class ConstraintSatisfaction:
     """ Residuals for velocity constraints. If positive, represents the amount by which the velocity exceeds the maximum allowed velocity. Shape ([b], t-1, num_agents). """
 
 
-def compute_agent_obstacle_constraint_residuals(
+def compute_agent_circular_obstacle_constraint_residuals(
     problem: Problem[np.ndarray], trajectory_b_T_A_D: np.ndarray
 ) -> np.ndarray:
     ### Agent-obstacle nonpenetration constraints ###
@@ -42,6 +42,20 @@ def compute_agent_obstacle_constraint_residuals(
     ] = 0.0
 
     return agent_obstacle_constraint_residuals_b_T_A_O
+
+
+def compute_agent_rectangular_obstacle_constraint_residuals(
+    problem: Problem[np.ndarray], trajectory_b_T_A_D: np.ndarray
+) -> np.ndarray:
+    # 2 = (low, high)
+    bounds_O_2_D = problem.axis_aligned_box_obstacle_bounds.transpose(0, 2, 1)
+    distances_b_T_A_O_2_D = trajectory_b_T_A_D[..., :, :, None, None, :] - bounds_O_2_D
+    # distance from lower bound is negated
+    distances_b_T_A_O_2_D[..., 0, :] *= -1
+    distances_b_T_A_O = np.max(np.max(distances_b_T_A_O_2_D, axis=-1), axis=-1)
+    distances_b_T_A_O -= problem.agent_radii[:, np.newaxis]
+    distances_b_T_A_O[distances_b_T_A_O > 0] = 0
+    return -distances_b_T_A_O
 
 
 def compute_agent_agent_constraint_residuals(
@@ -99,7 +113,7 @@ def compute_constraint_residuals(
     indicates a constraint violation.
     """
     return ConstraintSatisfaction(
-        agent_obstacle_constraint_residuals=compute_agent_obstacle_constraint_residuals(
+        agent_obstacle_constraint_residuals=compute_agent_circular_obstacle_constraint_residuals(
             problem, trajectory_b_T_A_D
         ),
         agent_agent_constraint_residuals=compute_agent_agent_constraint_residuals(

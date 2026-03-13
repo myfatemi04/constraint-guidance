@@ -458,6 +458,51 @@ def _create_voronoi_polygon(
             )
         )
 
+    for obstacle_i in range(problem.num_axis_aligned_box_obstacles):
+        lower = problem.axis_aligned_box_obstacle_bounds[obstacle_i, 0]
+        upper = problem.axis_aligned_box_obstacle_bounds[obstacle_i, 1]
+        # add the agent radius to the box size
+        lower -= problem.agent_radii[0]
+        upper += problem.agent_radii[0]
+        base_points = np.array(
+            [
+                [lower[0], lower[1]],
+                [lower[0], upper[1]],
+                [upper[0], upper[1]],
+                [upper[0], lower[1]],
+            ]
+        )
+        polygons.append(
+            np.array(
+                [
+                    *np.linspace(
+                        base_points[0],
+                        base_points[1],
+                        circle_approximation_num_sides // 4,
+                        endpoint=False,
+                    ),
+                    *np.linspace(
+                        base_points[1],
+                        base_points[2],
+                        circle_approximation_num_sides // 4,
+                        endpoint=False,
+                    ),
+                    *np.linspace(
+                        base_points[2],
+                        base_points[3],
+                        circle_approximation_num_sides // 4,
+                        endpoint=False,
+                    ),
+                    *np.linspace(
+                        base_points[3],
+                        base_points[0],
+                        circle_approximation_num_sides // 4,
+                        endpoint=False,
+                    ),
+                ]
+            )
+        )
+
     # Note: order here must be counter clockwise to represent the flipped orientation.
     all_points = []
     for polygon in polygons:
