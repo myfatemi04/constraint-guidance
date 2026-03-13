@@ -122,9 +122,13 @@ if __name__ == "__main__":
             k: f"results/2026-03-03/experiment_11-48-55_APPROXIMATE_V0_cbs_spatial_approximation/{k}/table.csv"
             for k in ["dense", "simple", "shelf", "connected_room"]
         },
+        "011_alm": {
+            k: f"results/2026-03-12/experiment_21-50-02_alm/{k}/table.csv"
+            for k in ["dense", "simple", "shelf", "connected_room"]
+        },
     }
 
-    name = "010_highlevel_search_more"
+    name = sorted(path_groups.keys())[-1]
     paths = path_groups[name]
 
     df_and_title = [

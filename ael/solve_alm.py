@@ -3,10 +3,17 @@ Uses an iterative augmented Lagrangian approach. Instead of solving exactly, fol
 also used to update the Lagrange multipliers.
 """
 
+import json
+import time
+
+import matplotlib.pyplot as plt
 import numpy as np
 
+from ael.constraint_evaluation import compute_constraint_residuals
 from ael.initial_paths import get_initial_paths_by_agent
 from ael.problem import Problem
+from ael.solve import Result
+from ael.visualize import visualize
 
 
 def solve_alm(
@@ -15,6 +22,7 @@ def solve_alm(
     num_steps=100,
     num_inner_optimization_steps=10,
 ):
+    t0 = time.time()
     trajectory = np.zeros((problem.num_timesteps, problem.num_agents, 2))
     # for adam
     trajectory_m = trajectory.copy()
@@ -70,44 +78,64 @@ def solve_alm(
             grad = np.zeros_like(trajectory)
 
             # kinetic energy
-            grad[1:] -= agent_stepwise_displacements
-            grad[-1:] += agent_stepwise_displacements
+            ke_weight = 50
+            grad[1:] += agent_stepwise_displacements * ke_weight
+            grad[:-1] -= agent_stepwise_displacements * ke_weight
+
             # agent-agent constraints
             mask = agent_agent_constraint_functions < 0
-            grad[mask] += -rho * agent_agent_displacements[mask] - agent_agent_nu[mask][
-                ..., None
-            ] * (
-                agent_agent_displacements[mask]
-                / np.linalg.norm(
-                    agent_agent_displacements[mask], axis=-1, keepdims=True
-                )
-            )
-            # agent-obstacle constraints
-            mask = agent_obstacle_constraint_functions < 0
-            grad[mask] += -rho * agent_obstacle_displacements[mask] - agent_obstacle_nu[
+            update = np.zeros_like(agent_agent_displacements)
+            update[mask] = -rho * agent_agent_displacements[mask] - agent_agent_nu[
                 mask
             ][..., None] * (
-                agent_obstacle_displacements[mask]
-                / np.linalg.norm(
-                    agent_obstacle_displacements[mask], axis=-1, keepdims=True
+                agent_agent_displacements[mask]
+                / (
+                    np.linalg.norm(
+                        agent_agent_displacements[mask], axis=-1, keepdims=True
+                    )
+                    + epsilon
                 )
             )
+            grad += np.sum(update, axis=2)
+
+            # agent-obstacle constraints
+            mask = agent_obstacle_constraint_functions < 0
+            update = np.zeros_like(agent_obstacle_displacements)
+            update[mask] = -rho * agent_obstacle_displacements[
+                mask
+            ] - agent_obstacle_nu[mask][..., None] * (
+                agent_obstacle_displacements[mask]
+                / (
+                    np.linalg.norm(
+                        agent_obstacle_displacements[mask], axis=-1, keepdims=True
+                    )
+                    + epsilon
+                )
+            )
+            grad += np.sum(update, axis=2)
+
             # velocity constraints
             mask = agent_velocity_constraint_functions < 0
-            grad[mask][1:] += -rho * agent_stepwise_displacements[
-                mask[1:]
-            ] - velocity_nu[mask][..., None] * (
-                agent_stepwise_displacements[mask[1:]]
-                / np.linalg.norm(
-                    agent_stepwise_displacements[mask[1:]], axis=-1, keepdims=True
+            grad[1:][mask] += rho * agent_stepwise_displacements[mask] + velocity_nu[
+                mask
+            ][..., None] * (
+                agent_stepwise_displacements[mask]
+                / (
+                    np.linalg.norm(
+                        agent_stepwise_displacements[mask], axis=-1, keepdims=True
+                    )
+                    + epsilon
                 )
             )
-            grad[mask][:-1] += rho * agent_stepwise_displacements[
-                mask[:-1]
-            ] + velocity_nu[mask][..., None] * (
-                agent_stepwise_displacements[mask[:-1]]
-                / np.linalg.norm(
-                    agent_stepwise_displacements[mask[:-1]], axis=-1, keepdims=True
+            grad[:-1][mask] += -rho * agent_stepwise_displacements[mask] - velocity_nu[
+                mask
+            ][..., None] * (
+                agent_stepwise_displacements[mask]
+                / (
+                    np.linalg.norm(
+                        agent_stepwise_displacements[mask], axis=-1, keepdims=True
+                    )
+                    + epsilon
                 )
             )
 
@@ -118,11 +146,41 @@ def solve_alm(
             b_hat = trajectory_b / (1 - beta2**total_gradient_steps)
             trajectory -= lr * m_hat / (np.sqrt(b_hat) + epsilon)
 
+            # fix the start and end positions
+            trajectory[0, :, :] = problem.agent_start_positions
+            trajectory[-1, :, :] = problem.agent_end_positions
+
         agent_agent_nu += rho * np.maximum(agent_agent_constraint_functions, 0)
         agent_obstacle_nu += rho * np.maximum(agent_obstacle_constraint_functions, 0)
         velocity_nu += rho * np.maximum(agent_velocity_constraint_functions, 0)
         rho *= rho_multiplier
 
         trajectory_history.append(trajectory)
+    t1 = time.time()
 
-    return trajectory
+    constraint_satisfaction = compute_constraint_residuals(problem, trajectory)
+
+    return Result(
+        solve_time=t1 - t0,
+        trajectories=trajectory_history,
+        identifier=problem.identifier,
+        constraint_satisfaction=constraint_satisfaction,
+    )
+
+
+def test():
+    with open("instances_data/instances_connected_room.json") as f:
+        data = json.load(f)
+
+    t0 = time.time()
+    problem = Problem.from_json(data[2])
+    trajectories = solve_alm(problem)
+    visualize(problem, plt.gca(), trajectories)
+    t1 = time.time()
+    print(f"Time taken: {t1 - t0}")
+
+    plt.show()
+
+
+if __name__ == "__main__":
+    test()

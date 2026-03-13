@@ -10,7 +10,6 @@ from ael.problem import Problem
 from ael.solve import (
     DEFAULT_SCHEDULES,
     Result,
-    ScheduleEntry,
     ScoreComputationMethod,
     get_initial_paths_by_agent,
     solve,
@@ -48,11 +47,7 @@ def make_constrained_graph(constraints: list[CBSConstraint], graph: nx.Graph):
     return constrained_graph
 
 
-def cbs_spatial_approximation(
-    problem: Problem,
-    score_computation_method: ScoreComputationMethod,
-    schedule: list[ScheduleEntry],
-) -> Result:
+def cbs_spatial_approximation(problem: Problem, solve_fn) -> Result:
     graph = make_roadmap(problem)
     initial_paths = get_initial_paths_by_agent(problem, dt=1.0, graph=graph)
     initial_cost = (
@@ -84,12 +79,7 @@ def cbs_spatial_approximation(
             break
         cost, _, node = heapq.heappop(nodes)
         # Try to solve this node.
-        result = solve(
-            problem,
-            score_computation_method,
-            schedule=schedule,
-            initial_paths=node.initial_paths,
-        )
+        result = solve_fn(problem, initial_paths=node.initial_paths)
         # Check for constraint violations. (t, a, a)
         aa_constraint_residuals_T_A_A = (
             result.constraint_satisfaction.agent_agent_constraint_residuals
@@ -158,8 +148,13 @@ if __name__ == "__main__":
         data = json.load(f)
     # a problem that was found not to converge originally
     hard_problem = Problem.from_json(data[284])
-    result = cbs_spatial_approximation(
-        hard_problem,
-        score_computation_method=ScoreComputationMethod.APPROXIMATE_V0,
-        schedule=DEFAULT_SCHEDULES[ScoreComputationMethod.APPROXIMATE_V0],
-    )
+
+    def solve_fn(problem, initial_paths):
+        return solve(
+            problem,
+            score_computation_method=ScoreComputationMethod.APPROXIMATE_V0,
+            initial_paths=initial_paths,
+            schedule=DEFAULT_SCHEDULES[ScoreComputationMethod.APPROXIMATE_V0],
+        )
+
+    cbs_spatial_approximation(hard_problem, solve_fn)
