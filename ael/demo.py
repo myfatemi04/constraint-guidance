@@ -40,7 +40,7 @@ class MainArgs:
     """ Path to a JSON file specifying the schedule to use, or 'default'. """
 
     save_dir: str = "./results/demo/{date}/{time}"
-    """ Path to a directory in which to save results. Allows formatting with `date` and `time` variables, which are formatted as YYYY-mm-dd and HH-MM-SS, respectively. """
+    """ Path to a directory in which to save results. Allows formatting with `date` and `time` variables, which are formatted as YYYY-mm-dd and HH-MM-SS, respectively."""
 
     score_computation_method: ScoreComputationMethod = (
         ScoreComputationMethod.APPROXIMATE_V0
@@ -72,22 +72,22 @@ def store_result(
         velocity_constraint_residuals=result.constraint_satisfaction.velocity_constraint_residuals,
     )
 
+    agent_obs_resids = np.concatenate(
+        [
+            result.constraint_satisfaction.agent_circular_obstacle_constraint_residuals,
+            result.constraint_satisfaction.agent_rectangular_obstacle_constraint_residuals,
+        ],
+        axis=-1,
+    )
+    if agent_obs_resids.size == 0:
+        agent_obs_resids = np.zeros(1)
+
     # Save high-level information.
     info_dict = {
         "solve_time": result.solve_time,
         "identifier": result.identifier,
         "max_constraint_residuals": {
-            "agent_obstacle": float(
-                np.max(
-                    np.concatenate(
-                        [
-                            result.constraint_satisfaction.agent_circular_obstacle_constraint_residuals,
-                            result.constraint_satisfaction.agent_rectangular_obstacle_constraint_residuals,
-                        ],
-                        axis=-1,
-                    )
-                )
-            ),
+            "agent_obstacle": float(np.max(agent_obs_resids)),
             "agent_agent": float(
                 np.max(result.constraint_satisfaction.agent_agent_constraint_residuals)
             ),
@@ -198,8 +198,8 @@ def main(args: MainArgs):
     # problem = get_problem(args)
     import ael.maps
 
-    problem = ael.maps.get_sample_problem_conveyor_2d_problem(
-        num_agents=args.num_robots or 3
+    problem = ael.maps.get_sample_problem(
+        key="highways", num_agents=args.num_robots or 3, dist=1.8, num_timesteps=128
     )
 
     result = solve(
@@ -212,6 +212,7 @@ def main(args: MainArgs):
         args.save_dir.format(
             date=time.strftime("%Y-%m-%d"), time=time.strftime("%H-%M-%S")
         )
+        + (f"_{result.identifier}" if result.identifier is not None else "")
     )
     save_dir.mkdir(parents=True, exist_ok=True)
     store_result(

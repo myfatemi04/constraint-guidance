@@ -63,7 +63,7 @@ BUILT_IN_MAPS = {
 
 
 # Adapted from https://github.com/yoraish/mmd/blob/main/mmd/common/multi_agent_utils.py
-def get_start_goal_pos_boundary(num_agents: int, dist=0.87):
+def get_start_goal_pos_boundary(num_agents: int, dist=0.87, clip=1):
     start = np.array(
         [
             [
@@ -72,7 +72,7 @@ def get_start_goal_pos_boundary(num_agents: int, dist=0.87):
             ]
             for i in range(num_agents)
         ]
-    ).clip(-1, 1)
+    ).clip(-clip, clip)
 
     goal = start.copy()
     # flip X if abs(X) < abs(Y) else flip Y
@@ -133,19 +133,23 @@ def generate_positions_random(
     return sample_set(), sample_set()
 
 
-def get_sample_problem_conveyor_2d_problem(num_agents: int) -> Problem:
+def get_sample_problem(
+    key: str, num_agents: int, dist=0.87, clip=None, num_timesteps=64
+) -> Problem:
     problem = Problem(
-        num_timesteps=128,
+        num_timesteps=num_timesteps,
         agent_start_positions=np.zeros((num_agents, 2)),
         agent_end_positions=np.zeros((num_agents, 2)),
         agent_reference_trajectory=None,
         agent_radii=np.array([0.05] * num_agents),
         agent_max_speeds=np.array([0.05] * num_agents),
-        **BUILT_IN_MAPS["conveyor_2d"],  # ty:ignore[invalid-argument-type]
+        **BUILT_IN_MAPS[key],  # ty:ignore[invalid-argument-type]
     )
 
     problem.agent_start_positions, problem.agent_end_positions = (
-        get_start_goal_pos_boundary(num_agents, dist=0.87)
+        get_start_goal_pos_boundary(num_agents, dist, clip or dist)
     )
+
+    problem.identifier = f"{key}_{num_agents}_agents"
 
     return problem

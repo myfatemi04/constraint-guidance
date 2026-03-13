@@ -434,8 +434,8 @@ def compute_agent_obstacle_score_rectangular_obstacles(
     T, A, D = xy_T_A_D.shape
     xy_T_A_1_D = xy_T_A_D.reshape(T, A, 1, D)
     boxes_A_O_2_D = np.repeat(boxes_O_2_D[None], A, axis=0)
-    boxes_A_O_2_D[..., 0, :] -= agent_radii[:, None, None]
-    boxes_A_O_2_D[..., 1, :] += agent_radii[:, None, None]
+    boxes_A_O_2_D[..., 0, :] -= 2 * agent_radii[:, None, None]
+    boxes_A_O_2_D[..., 1, :] += 2 * agent_radii[:, None, None]
     score_T_A_O_D, likelihood_T_A_O = box_exclusion_score_and_likelihood(
         xy_T_A_1_D, boxes_A_O_2_D, sigma
     )
@@ -473,11 +473,14 @@ def compute_score(
         problem, xy_T_B_D, sigma, n_integral=n_integral
     ).sum(axis=2)
 
-    score_T_B_D += compute_velocity_score_batched_helper(
-        xy_T_B_D,
-        problem.agent_max_speeds,
-        np.ones(problem.num_agents) * sigma,
-        n_integral,
+    score_T_B_D += (
+        compute_velocity_score_batched_helper(
+            xy_T_B_D,
+            problem.agent_max_speeds,
+            np.ones(problem.num_agents) * sigma,
+            n_integral,
+        )
+        * 0.1
     )
 
     score_T_B_D = score_T_B_D + kinetic_weight * compute_kinetic_energy_score(

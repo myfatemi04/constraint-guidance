@@ -55,6 +55,11 @@ def compute_agent_circular_obstacle_constraint_residuals(
 def compute_agent_rectangular_obstacle_constraint_residuals(
     problem: Problem[np.ndarray], trajectory_b_T_A_D: np.ndarray
 ) -> np.ndarray:
+    if problem.num_axis_aligned_box_obstacles == 0:
+        return np.zeros(
+            trajectory_b_T_A_D.shape[:-1] + (problem.num_axis_aligned_box_obstacles,)
+        )
+
     # 2 = (low, high)
     bounds_O_2_D = problem.axis_aligned_box_obstacle_bounds
     distances_b_T_A_O_2_D = trajectory_b_T_A_D[..., :, :, None, None, :] - bounds_O_2_D
