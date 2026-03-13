@@ -49,17 +49,17 @@ def compute_log_N_and_sign_1D_interval(x, x0, x1, sigma):
 # The lowerbase b represents an 'abstract batch' and the return result will have a shape (b) where b is the *broadcasted* shape of the x and box batch dimensions.
 
 
-def box_complement_log_denominator(x_b_D, box_b_D_2, sigma):
+def box_complement_log_denominator(x_b_D, box_b_2_D, sigma):
     # Draw a picture in the 2D case and use induction to extrapolate to higher dimensions.
     # Output shape will be (b, D)
     log_D_dim0__b = compute_log_D_1D_complement_interval(
-        x_b_D[..., 0], box_b_D_2[..., 0, 0], box_b_D_2[..., 0, 1], sigma
+        x_b_D[..., 0], box_b_2_D[..., 0, 0], box_b_2_D[..., 1, 0], sigma
     )
-    if len(box_b_D_2) > 1:
+    if box_b_2_D.shape[-1] > 1:
         log_D_remaining_dims__b = box_complement_log_denominator(
-            x_b_D[..., 1:], box_b_D_2[..., 1:, :], sigma
+            x_b_D[..., 1:], box_b_2_D[..., :, 1:], sigma
         ) + compute_log_D_1D_interval(
-            x_b_D[..., 0], box_b_D_2[..., 0, 0], box_b_D_2[..., 0, 1], sigma
+            x_b_D[..., 0], box_b_2_D[..., 0, 0], box_b_2_D[..., 1, 0], sigma
         )
         base = np.maximum(log_D_dim0__b, log_D_remaining_dims__b)
         log_D_total__b = (
@@ -72,30 +72,30 @@ def box_complement_log_denominator(x_b_D, box_b_D_2, sigma):
     return log_D_dim0__b
 
 
-def box_inclusion_score_and_likelihood(x_b_D, box_b_D_2, sigma):
+def box_inclusion_score_and_likelihood(x_b_D, box_b_2_D, sigma):
     arrays = []
     log_D_per_dim_D_B = np.array(
         [
             compute_log_D_1D_interval(
-                x_b_D[..., dim], box_b_D_2[..., dim, 0], box_b_D_2[..., dim, 1], sigma
+                x_b_D[..., dim], box_b_2_D[..., 0, dim], box_b_2_D[..., 1, dim], sigma
             )
             for dim in range(x_b_D.shape[-1])
         ]
     )
     for dim in range(x_b_D.shape[-1]):
         log_N__b, sign_b = compute_log_N_and_sign_1D_interval(
-            x_b_D[..., dim], box_b_D_2[..., dim, 0], box_b_D_2[..., dim, 1], sigma
+            x_b_D[..., dim], box_b_2_D[..., 0, dim], box_b_2_D[..., 1, dim], sigma
         )
         arrays.append(np.exp(log_N__b - log_D_per_dim_D_B[dim]) * sign_b)
     return np.stack(arrays, axis=-1), log_D_per_dim_D_B.sum(axis=0)
 
 
-def box_exclusion_score_and_likelihood(x_b_D, box_b_D_2, sigma):
-    log_D__B = box_complement_log_denominator(x_b_D, box_b_D_2, sigma)
+def box_exclusion_score_and_likelihood(x_b_D, box_b_2_D, sigma):
+    log_D__B = box_complement_log_denominator(x_b_D, box_b_2_D, sigma)
     log_D_per_dim_for_inclusion_D_B = np.array(
         [
             compute_log_D_1D_interval(
-                x_b_D[..., dim], box_b_D_2[..., dim, 0], box_b_D_2[..., dim, 1], sigma
+                x_b_D[..., dim], box_b_2_D[..., 0, dim], box_b_2_D[..., 1, dim], sigma
             )
             for dim in range(x_b_D.shape[-1])
         ]
@@ -105,7 +105,7 @@ def box_exclusion_score_and_likelihood(x_b_D, box_b_D_2, sigma):
     for dim in range(x_b_D.shape[-1]):
         # this is signed for the 'inclusion' case. negate sign for exclusion.
         log_N__b, sign_b = compute_log_N_and_sign_1D_interval(
-            x_b_D[..., dim], box_b_D_2[..., dim, 0], box_b_D_2[..., dim, 1], sigma
+            x_b_D[..., dim], box_b_2_D[..., 0, dim], box_b_2_D[..., 1, dim], sigma
         )
         score_this_dim = (
             np.exp(

@@ -4,30 +4,30 @@ from ael.problem import Problem
 
 
 def _compute_bounds(centers: np.ndarray, sizes: np.ndarray):
-    return np.stack([centers - sizes / 2, centers + sizes / 2], axis=1)
+    return np.stack([centers - sizes / 2, centers + sizes / 2], axis=-2)
 
 
 BUILT_IN_MAPS = {
     # https://github.com/yoraish/mmd/blob/main/deps/torch_robotics/torch_robotics/environments/env_conveyor_2d.py
     "conveyor_2d": {
-        "circular_obstacle_positions": [],
-        "circular_obstacle_radii": [],
-        "axis_aligned_obstacle_bounds": _compute_bounds(
+        "circular_obstacle_positions": np.array([]),
+        "circular_obstacle_radii": np.array([]),
+        "axis_aligned_box_obstacle_bounds": _compute_bounds(
             np.array([[0, 0], [0, 0.35], [0, -0.35]]),
             np.array([[0.8, 0.1], [1.0, 0.1], [1.0, 0.1]]),
         ),
     },
     # https://github.com/yoraish/mmd/blob/main/deps/torch_robotics/torch_robotics/environments/env_empty_2d.py
     "empty_2d": {
-        "circular_obstacle_positions": [],
-        "circular_obstacle_radii": [],
-        "axis_aligned_obstacle_bounds": [],
+        "circular_obstacle_positions": np.array([]),
+        "circular_obstacle_radii": np.array([]),
+        "axis_aligned_box_obstacle_bounds": np.array([]),
     },
     # https://github.com/yoraish/mmd/blob/main/deps/torch_robotics/torch_robotics/environments/env_highways_2d.py
     "highways": {
-        "circular_obstacle_positions": [],
-        "circular_obstacle_radii": [],
-        "axis_aligned_obstacle_bounds": _compute_bounds(
+        "circular_obstacle_positions": np.array([]),
+        "circular_obstacle_radii": np.array([]),
+        "axis_aligned_box_obstacle_bounds": _compute_bounds(
             np.array(
                 [
                     [0, 0.0],

@@ -32,7 +32,7 @@ def visualize(
 
     # Plot the axis-aligned box obstacles
     for obs_index in range(problem.num_axis_aligned_box_obstacles):
-        (x_low, x_high), (y_low, y_high) = problem.axis_aligned_box_obstacle_bounds[
+        (x_low, y_low), (x_high, y_high) = problem.axis_aligned_box_obstacle_bounds[
             obs_index
         ].tolist()
         ax.add_patch(
