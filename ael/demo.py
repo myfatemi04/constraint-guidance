@@ -1,5 +1,6 @@
 """A CLI that demonstrates solving a problem from a problem set and saving the results."""
 
+import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,7 +43,8 @@ class MainArgs:
     """ Path to a directory in which to save results. Allows formatting with `date` and `time` variables, which are formatted as YYYY-mm-dd and HH-MM-SS, respectively. """
 
     score_computation_method: ScoreComputationMethod = (
-        ScoreComputationMethod.FACTORIZED_MPPI
+        ScoreComputationMethod.APPROXIMATE_V0
+        # ScoreComputationMethod.FACTORIZED_MPPI
     )
 
 
@@ -64,7 +66,8 @@ def store_result(
     np.savez_compressed(
         save_dir / "result.npz",
         trajectories=np.array(result.trajectories),
-        agent_obstacle_constraint_residuals=result.constraint_satisfaction.agent_obstacle_constraint_residuals,
+        agent_circular_obstacle_constraint_residuals=result.constraint_satisfaction.agent_circular_obstacle_constraint_residuals,
+        agent_rectangular_obstacle_constraint_residuals=result.constraint_satisfaction.agent_rectangular_obstacle_constraint_residuals,
         agent_agent_constraint_residuals=result.constraint_satisfaction.agent_agent_constraint_residuals,
         velocity_constraint_residuals=result.constraint_satisfaction.velocity_constraint_residuals,
     )
@@ -76,7 +79,13 @@ def store_result(
         "max_constraint_residuals": {
             "agent_obstacle": float(
                 np.max(
-                    result.constraint_satisfaction.agent_obstacle_constraint_residuals
+                    np.concatenate(
+                        [
+                            result.constraint_satisfaction.agent_circular_obstacle_constraint_residuals,
+                            result.constraint_satisfaction.agent_rectangular_obstacle_constraint_residuals,
+                        ],
+                        axis=-1,
+                    )
                 )
             ),
             "agent_agent": float(
@@ -132,9 +141,7 @@ def store_result(
     )
 
 
-def main(args: MainArgs):
-    import json
-
+def get_problem(args: MainArgs):
     problem_set_path = PROBLEM_SET_ROOT_DIR / f"instances_{args.problem_set}.json"
     if not problem_set_path.exists():
         raise ValueError(f"Problem set path {problem_set_path} does not exist.")
@@ -166,6 +173,10 @@ def main(args: MainArgs):
         problem = Problem.from_json(problems[0], type="numpy")
         problem.identifier = f"{args.problem_set}_0"
 
+    return problem
+
+
+def get_schedule(args: MainArgs):
     match args.schedule:
         case "default":
             schedule = DEFAULT_SCHEDULES[args.score_computation_method]
@@ -178,6 +189,18 @@ def main(args: MainArgs):
                 schedule_json = json.load(f)
 
             schedule = [ScheduleEntry(**entry_dict) for entry_dict in schedule_json]
+
+    return schedule
+
+
+def main(args: MainArgs):
+    schedule = get_schedule(args)
+    # problem = get_problem(args)
+    import ael.maps
+
+    problem = ael.maps.get_sample_problem_conveyor_2d_problem(
+        num_agents=args.num_robots or 3
+    )
 
     result = solve(
         problem=problem,

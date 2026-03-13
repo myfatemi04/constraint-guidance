@@ -76,9 +76,10 @@ def get_start_goal_pos_boundary(num_agents: int, dist=0.87):
 
     goal = start.copy()
     # flip X if abs(X) < abs(Y) else flip Y
-    flip_x_mask = np.abs(start[:, 0]) < np.abs(start[:, 1])
-    goal[flip_x_mask, 0] *= -1
-    goal[~flip_x_mask, 1] *= -1
+    # flip_x_mask = np.abs(start[:, 0]) < np.abs(start[:, 1])
+    # goal[flip_x_mask, 0] *= -1
+    # goal[~flip_x_mask, 1] *= -1
+    goal *= -1
     return start, goal
 
 
@@ -130,3 +131,21 @@ def generate_positions_random(
         return points
 
     return sample_set(), sample_set()
+
+
+def get_sample_problem_conveyor_2d_problem(num_agents: int) -> Problem:
+    problem = Problem(
+        num_timesteps=128,
+        agent_start_positions=np.zeros((num_agents, 2)),
+        agent_end_positions=np.zeros((num_agents, 2)),
+        agent_reference_trajectory=None,
+        agent_radii=np.array([0.05] * num_agents),
+        agent_max_speeds=np.array([0.05] * num_agents),
+        **BUILT_IN_MAPS["conveyor_2d"],  # ty:ignore[invalid-argument-type]
+    )
+
+    problem.agent_start_positions, problem.agent_end_positions = (
+        get_start_goal_pos_boundary(num_agents, dist=0.87)
+    )
+
+    return problem

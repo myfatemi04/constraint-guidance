@@ -345,20 +345,33 @@ def main():
 
 def _get_graph_without_vertices_in_obstacles(
     vor: Voronoi,
-    obstacle_positions: np.ndarray,
-    obstacle_radii: np.ndarray,
+    circular_obstacle_positions: np.ndarray,
+    circular_obstacle_radii: np.ndarray,
+    axis_aligned_box_obstacle_bounds: np.ndarray,
     agent_radius: float,
 ):
     """creates a graph of points on the Voronoi diagram that are not in the obstacles, as well as trimming tree branches"""
     graph = defaultdict(set)
-    ok_vertices = (
-        np.linalg.norm(
-            # (v, :, 2) - (:, o, 2) -> (v, o, 2)
-            vor.vertices[:, None, :] - obstacle_positions[None, :, :],
-            axis=-1,
-        )  # (v, o)
-        >= (obstacle_radii + agent_radius)[None, :]
-    ).all(axis=-1)  # (v,)
+
+    ok_vertices = np.ones(vor.vertices.shape[0], dtype=bool)
+
+    if circular_obstacle_positions.size > 0:
+        ok_vertices &= (
+            np.linalg.norm(
+                # (v, :, 2) - (:, o, 2) -> (v, o, 2)
+                vor.vertices[:, None, :] - circular_obstacle_positions[None, :, :],
+                axis=-1,
+            )  # (v, o)
+            >= (circular_obstacle_radii + agent_radius)[None, :]
+        ).all(axis=-1)  # (v,)
+
+    if axis_aligned_box_obstacle_bounds.size > 0:
+        lower = axis_aligned_box_obstacle_bounds[:, 0, :] - agent_radius
+        upper = axis_aligned_box_obstacle_bounds[:, 1, :] + agent_radius
+        ok_vertices &= ~(
+            (vor.vertices[:, None, :] >= lower[None, :, :])
+            & (vor.vertices[:, None, :] <= upper[None, :, :])
+        ).all(axis=-1).any(axis=-1)
 
     for pointidx, simplex in zip(vor.ridge_points, vor.ridge_vertices):
         simplex = np.asarray(simplex)
@@ -633,6 +646,7 @@ def _get_voronoi_graph(problem: Problem, voronoi: Voronoi) -> nx.Graph:
         voronoi,
         problem.circular_obstacle_positions,
         problem.circular_obstacle_radii,
+        problem.axis_aligned_box_obstacle_bounds,
         problem.agent_radii[0],
     )
     _remove_tree_vertices(dict_graph)

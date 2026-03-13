@@ -17,9 +17,9 @@ from ael.constraint_evaluation import (
 from ael.geometry import compute_obstacle_boundaries
 from ael.initial_paths import get_initial_paths_by_agent
 from ael.problem import Problem
-from ael.score_function import (
-    compute_score,
-    compute_score_from_boundary_integrals,
+from ael.score_boundary_integrals import compute_score_from_boundary_integrals
+from ael.score_function import compute_score
+from ael.score_mppi import (
     compute_score_mppi_factorized,
     compute_score_mppi_unfactorized,
 )
@@ -88,7 +88,9 @@ DEFAULT_SCHEDULE_APPROXIMATE_V0 = [
         step_size=0.03 * (0.01 / 0.03) ** (i / STEPS),
         num_steps=1,
         score_fn_kwargs=dict(
-            kinetic_weight=10 * (1 / 10) ** (i / STEPS), n_integral=10
+            # kinetic_weight=10 * (1 / 10) ** (i / STEPS),
+            kinetic_weight=0.01,
+            n_integral=10,
         ),
     )
     for i in range(STEPS)
@@ -134,7 +136,9 @@ def solve(
     start_positions = problem.agent_start_positions
     end_positions = problem.agent_end_positions
 
-    trajectory = np.linspace(start_positions, end_positions, num=64, axis=0)
+    trajectory = np.linspace(
+        start_positions, end_positions, num=problem.num_timesteps, axis=0
+    )
 
     trajectory[0] = start_positions
     trajectory[-1] = end_positions

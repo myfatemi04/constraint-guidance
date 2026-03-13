@@ -7,8 +7,11 @@ from ael.problem import Problem
 
 @dataclass
 class ConstraintSatisfaction:
-    agent_obstacle_constraint_residuals: np.ndarray
+    agent_circular_obstacle_constraint_residuals: np.ndarray
     """ Residuals for agent-obstacle nonpenetration constraints. If positive, represents the amount by which the signed distance into the obstacle exceeds zero. Shape ([b], t, num_agents, num_obstacles). """
+
+    agent_rectangular_obstacle_constraint_residuals: np.ndarray
+    """ Residuals for agent-axis-aligned-box-obstacle nonpenetration constraints. If positive, represents the amount by which the signed distance into the obstacle exceeds zero. Shape ([b], t, num_agents, num_axis_aligned_box_obstacles). """
 
     agent_agent_constraint_residuals: np.ndarray
     """ Residuals for agent-agent nonpenetration constraints. If positive, represents the amount by which the signed distance into another agent exceeds zero. Shape ([b], t, num_agents, num_agents). """
@@ -20,6 +23,11 @@ class ConstraintSatisfaction:
 def compute_agent_circular_obstacle_constraint_residuals(
     problem: Problem[np.ndarray], trajectory_b_T_A_D: np.ndarray
 ) -> np.ndarray:
+    if problem.num_circular_obstacles == 0:
+        return np.zeros(
+            trajectory_b_T_A_D.shape[:-1] + (problem.num_circular_obstacles,)
+        )
+
     ### Agent-obstacle nonpenetration constraints ###
     agent_obstacle_distances_b_T_A_O = (
         # ([b], t, num_agents, 1, 2) - (1, num_obstacles, 2) -> ([b], t, num_agents, num_obstacles, 2)
@@ -48,7 +56,7 @@ def compute_agent_rectangular_obstacle_constraint_residuals(
     problem: Problem[np.ndarray], trajectory_b_T_A_D: np.ndarray
 ) -> np.ndarray:
     # 2 = (low, high)
-    bounds_O_2_D = problem.axis_aligned_box_obstacle_bounds.transpose(0, 2, 1)
+    bounds_O_2_D = problem.axis_aligned_box_obstacle_bounds
     distances_b_T_A_O_2_D = trajectory_b_T_A_D[..., :, :, None, None, :] - bounds_O_2_D
     # distance from lower bound is negated
     distances_b_T_A_O_2_D[..., 0, :] *= -1
@@ -113,7 +121,10 @@ def compute_constraint_residuals(
     indicates a constraint violation.
     """
     return ConstraintSatisfaction(
-        agent_obstacle_constraint_residuals=compute_agent_circular_obstacle_constraint_residuals(
+        agent_circular_obstacle_constraint_residuals=compute_agent_circular_obstacle_constraint_residuals(
+            problem, trajectory_b_T_A_D
+        ),
+        agent_rectangular_obstacle_constraint_residuals=compute_agent_rectangular_obstacle_constraint_residuals(
             problem, trajectory_b_T_A_D
         ),
         agent_agent_constraint_residuals=compute_agent_agent_constraint_residuals(

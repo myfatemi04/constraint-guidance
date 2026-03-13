@@ -142,7 +142,7 @@ def run_problem_set(args: MainArgs, problem_set: str, save_dir: Path):
         for future in tqdm.tqdm(as_completed(futures), total=len(futures)):
             result = cast(Result, future.result())
             agent_obstacle_max_residual = np.max(
-                result.constraint_satisfaction.agent_obstacle_constraint_residuals
+                result.constraint_satisfaction.agent_circular_obstacle_constraint_residuals
             )
             agent_agent_max_residual = np.max(
                 result.constraint_satisfaction.agent_agent_constraint_residuals
