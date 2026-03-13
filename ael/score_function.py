@@ -1,13 +1,7 @@
-from dataclasses import dataclass
 from functools import lru_cache
 
 import numpy as np
 
-from ael.constraint_evaluation import (
-    compute_agent_agent_constraint_residuals,
-    compute_agent_circular_obstacle_constraint_residuals,
-    compute_constraint_residuals,
-)
 from ael.problem import Problem
 from ael.score_box import box_exclusion_score_and_likelihood
 
@@ -340,7 +334,7 @@ def compute_kinetic_energy_score(xy_T_B_D: np.ndarray, sigma):
     )
 
 
-def compute_agent_circular_obstacle_and_agent_score_from_problem(
+def compute_agent_circular_obstacle_score_from_problem(
     problem: Problem, trajectory: np.ndarray, sigma: float, n_integral: int
 ):
     """
@@ -348,7 +342,6 @@ def compute_agent_circular_obstacle_and_agent_score_from_problem(
     This should be the main function used, because it offers the highest level of abstraction. Batching operations are handled internally.
     """
 
-    # Create batch for agent-obstacle interactions.
     agent_x_T_A = trajectory[:, :, 0]
     agent_y_T_A = trajectory[:, :, 1]
     obstacle_x_O = problem.circular_obstacle_positions[:, 0]
@@ -359,10 +352,14 @@ def compute_agent_circular_obstacle_and_agent_score_from_problem(
     )
 
     agent_x_T_A_O = np.repeat(
-        agent_x_T_A[:, :, None], problem.circular_obstacle_positions.shape[0], axis=2
+        agent_x_T_A[:, :, None],
+        problem.circular_obstacle_positions.shape[0],
+        axis=2,
     )
     agent_y_T_A_O = np.repeat(
-        agent_y_T_A[:, :, None], problem.circular_obstacle_positions.shape[0], axis=2
+        agent_y_T_A[:, :, None],
+        problem.circular_obstacle_positions.shape[0],
+        axis=2,
     )
     obstacle_x_T_A_O = np.repeat(
         obstacle_x_O[None, None, :], trajectory.shape[0], axis=0
@@ -381,6 +378,24 @@ def compute_agent_circular_obstacle_and_agent_score_from_problem(
 
     T, A, O = agent_x_T_A_O.shape  # noqa: E741
 
+    score = compute_agent_obstacle_score_batched_helper(
+        agent_x_T_A_O.reshape(-1),
+        agent_y_T_A_O.reshape(-1),
+        obstacle_x_T_A_O.reshape(-1),
+        obstacle_y_T_A_O.reshape(-1),
+        obstacle_rad_T_A_O.reshape(-1),
+        sigma_T_A_O.reshape(-1),
+        n_integral=n_integral,
+    ).reshape(T, A, O, 2)
+    score[np.isnan(score)] = 0.0
+    return score
+
+
+def compute_agent_agent_score_from_problem(
+    problem: Problem, trajectory: np.ndarray, sigma: float, n_integral: int
+):
+    agent_x_T_A = trajectory[:, :, 0]
+    agent_y_T_A = trajectory[:, :, 1]
     agent_x_T_A1_A2 = np.repeat(agent_x_T_A[:, :, None], trajectory.shape[1], axis=2)
     agent_x_T_A2_A1 = np.repeat(agent_x_T_A[:, None, :], trajectory.shape[1], axis=1)
     agent_y_T_A1_A2 = np.repeat(agent_y_T_A[:, :, None], trajectory.shape[1], axis=2)
@@ -395,66 +410,34 @@ def compute_agent_circular_obstacle_and_agent_score_from_problem(
         trajectory.shape[0],
         axis=0,
     )
-
-    agent_x_flat = np.concatenate(
-        [agent_x_T_A_O.reshape(-1), agent_x_T_A1_A2.reshape(-1)]
-    )
-    agent_y_flat = np.concatenate(
-        [agent_y_T_A_O.reshape(-1), agent_y_T_A1_A2.reshape(-1)]
-    )
-    obstacle_x_flat = np.concatenate(
-        [obstacle_x_T_A_O.reshape(-1), agent_x_T_A2_A1.reshape(-1)]
-    )
-    obstacle_y_flat = np.concatenate(
-        [obstacle_y_T_A_O.reshape(-1), agent_y_T_A2_A1.reshape(-1)]
-    )
-    obstacle_rad_flat = np.concatenate(
-        [obstacle_rad_T_A_O.reshape(-1), obstacle_rad_T_A1_A2.reshape(-1)]
-    )
-    sigma_flat = np.concatenate([sigma_T_A_O.reshape(-1), sigma_T_A1_A2.reshape(-1)])
-    score_flat = compute_agent_obstacle_score_batched_helper(
-        agent_x_flat,
-        agent_y_flat,
-        obstacle_x_flat,
-        obstacle_y_flat,
-        obstacle_rad_flat,
-        sigma_flat,
+    score_T_A1_A2_D = compute_agent_obstacle_score_batched_helper(
+        agent_x_T_A1_A2.reshape(-1),
+        agent_y_T_A1_A2.reshape(-1),
+        agent_x_T_A2_A1.reshape(-1),
+        agent_y_T_A2_A1.reshape(-1),
+        obstacle_rad_T_A1_A2.reshape(-1),
+        sigma_T_A1_A2.reshape(-1),
         n_integral=n_integral,
-    )
+    ).reshape(trajectory.shape[0], trajectory.shape[1], trajectory.shape[1], 2)
+    score_T_A1_A2_D[np.isnan(score_T_A1_A2_D)] = 0.0
 
-    # clip norm
-    # norm = np.linalg.norm(score_flat, axis=-1, keepdims=True)
-    # norm_clipped = np.clip(norm, 0, 1.0)
-    # score_flat = score_flat * (norm_clipped / (1e-8 + norm))
-    score_flat[np.isnan(score_flat)] = 0.0
-
-    # unpack scores.
-    score_T_A_O_D = score_flat[: T * A * O, :].reshape(
-        trajectory.shape[0],
-        trajectory.shape[1],
-        problem.circular_obstacle_positions.shape[0],
-        2,
-    )
-    score_T_A1_A2_D = score_flat[T * A * O :, :].reshape(
-        trajectory.shape[0], trajectory.shape[1], trajectory.shape[1], 2
-    )
     # Remove self-intersections.
     inds = np.arange(score_T_A1_A2_D.shape[1])
     score_T_A1_A2_D[:, inds, inds, :] = 0
 
-    return score_T_A_O_D, score_T_A1_A2_D
+    return score_T_A1_A2_D
 
 
 def compute_agent_obstacle_score_rectangular_obstacles(
-    xy_T_A_D, boxes_O_D_2, agent_radii, sigma
+    xy_T_A_D, boxes_O_2_D, agent_radii, sigma
 ):
     T, A, D = xy_T_A_D.shape
     xy_T_A_1_D = xy_T_A_D.reshape(T, A, 1, D)
-    boxes_A_O_D_2 = np.repeat(boxes_O_D_2[None], A, axis=0)
-    boxes_A_O_D_2[..., 0, :] -= agent_radii[:, None]
-    boxes_A_O_D_2[..., 1, :] += agent_radii[:, None]
+    boxes_A_O_2_D = np.repeat(boxes_O_2_D[None], A, axis=0)
+    boxes_A_O_2_D[..., 0, :] -= agent_radii[:, None, None]
+    boxes_A_O_2_D[..., 1, :] += agent_radii[:, None, None]
     score_T_A_O_D, likelihood_T_A_O = box_exclusion_score_and_likelihood(
-        xy_T_A_1_D, boxes_A_O_D_2, sigma
+        xy_T_A_1_D, boxes_A_O_2_D, sigma
     )
     score_T_A_D = score_T_A_O_D.sum(axis=-2)
     return score_T_A_D
@@ -473,18 +456,22 @@ def compute_score(
 
     score_T_B_D = np.zeros_like(xy_T_B_D)
 
-    score_T_A_O_D, score_T_A1_A2_D = (
-        compute_agent_circular_obstacle_and_agent_score_from_problem(
+    if problem.num_circular_obstacles > 0:
+        score_T_B_D += compute_agent_circular_obstacle_score_from_problem(
             problem, xy_T_B_D, sigma, n_integral=n_integral
+        ).sum(axis=2)
+
+    if problem.num_axis_aligned_box_obstacles > 0:
+        score_T_B_D += compute_agent_obstacle_score_rectangular_obstacles(
+            xy_T_B_D,
+            problem.axis_aligned_box_obstacle_bounds,
+            problem.agent_radii,
+            sigma,
         )
-    )
-    score_T_B_D += score_T_A1_A2_D.sum(axis=2) + score_T_A_O_D.sum(axis=2)
-    score_T_B_D += compute_agent_obstacle_score_rectangular_obstacles(
-        xy_T_B_D,
-        problem.axis_aligned_box_obstacle_bounds,
-        problem.agent_radii,
-        sigma,
-    )
+
+    score_T_B_D += compute_agent_agent_score_from_problem(
+        problem, xy_T_B_D, sigma, n_integral=n_integral
+    ).sum(axis=2)
 
     score_T_B_D += compute_velocity_score_batched_helper(
         xy_T_B_D,
@@ -498,473 +485,3 @@ def compute_score(
     )
 
     return score_T_B_D
-
-
-def evaluate_trajectory_unscaled_probabilities(
-    trajectory_batch: np.ndarray,
-    problem: Problem[np.ndarray],
-    agent_agent_constraint_tolerance: float,
-    agent_obstacle_constraint_tolerance: float,
-    velocity_constraint_tolerance: float,
-):
-    """Computes an unbiased estimate of trajectory unscaled probabilities."""
-    constraint_result = compute_constraint_residuals(problem, trajectory_batch)
-    agent_agent_ok = ~(
-        constraint_result.agent_agent_constraint_residuals
-        > agent_agent_constraint_tolerance
-    ).reshape(trajectory_batch.shape[0], -1).any(axis=-1)
-    agent_obstacle_ok = ~(
-        constraint_result.agent_obstacle_constraint_residuals
-        > agent_obstacle_constraint_tolerance
-    ).reshape(trajectory_batch.shape[0], -1).any(axis=-1)
-    velocity_ok = ~(
-        constraint_result.velocity_constraint_residuals > velocity_constraint_tolerance
-    ).reshape(trajectory_batch.shape[0], -1).any(axis=-1)
-    ok = agent_agent_ok & agent_obstacle_ok & velocity_ok
-
-    # Evaluate kinetic energy.
-    # (b, t-1, a)
-    velocities_squared = (
-        (trajectory_batch[:, 1:] - trajectory_batch[:, :-1]) ** 2
-    ).sum(axis=-1)
-    kinetic_energies = 0.5 * velocities_squared.reshape(
-        trajectory_batch.shape[0], -1
-    ).sum(axis=-1)
-    # Compute kinetic energy likelihood. Stabilize by subtracting mean of K trajectories.
-    kinetic_energies = kinetic_energies - (
-        kinetic_energies[ok].mean() if ok.any() else 0.0
-    )
-    unscaled_probabilities = ok.astype(np.float32) * np.exp(-kinetic_energies)
-    return unscaled_probabilities
-
-
-def compute_score_mppi_unfactorized(
-    trajectory: np.ndarray,
-    problem: Problem[np.ndarray],
-    sigma: float,
-    num_samples: int,
-    agent_agent_constraint_tolerance: float,
-    agent_obstacle_constraint_tolerance: float,
-    velocity_constraint_tolerance: float,
-):
-    trajectory_batch = trajectory[np.newaxis, ...].repeat(repeats=num_samples, axis=0)  # ty:ignore[no-matching-overload]
-    noise = np.random.normal(size=trajectory_batch.shape)
-    trajectory_weights = evaluate_trajectory_unscaled_probabilities(
-        trajectory_batch + noise * sigma,
-        problem,
-        agent_agent_constraint_tolerance,
-        agent_obstacle_constraint_tolerance,
-        velocity_constraint_tolerance,
-    )
-    score = (
-        np.sum(noise * trajectory_weights[:, None, None, None], axis=0)
-        / (np.sum(trajectory_weights) + 1e-8)
-        / (sigma**2)
-    )
-    return score
-
-
-@dataclass
-class MPPITrajectoryEvaluation:
-    """
-    Keys correspond to different factors that affect the overall unscaled probability. Each array
-    has shape (b, t, a), where b is the number of noise samples, t is the number of time steps, and
-    a is the number of agents, representing the unscaled probabilities per time step and agent.
-    Separating into these factors allows for more detailed analysis of which components are contributing
-    to the overall likelihood.
-    """
-
-    agent_agent: np.ndarray
-    agent_obstacle: np.ndarray
-    velocity: np.ndarray
-    kinetic_energy: np.ndarray
-
-
-def evaluate_trajectory_unscaled_probabilities_factorized(
-    trajectory_T_A_D: np.ndarray,
-    noise_B_T_A_D: np.ndarray,
-    problem: Problem[np.ndarray],
-    agent_agent_constraint_tolerance: float,
-    agent_obstacle_constraint_tolerance: float,
-    velocity_constraint_tolerance: float,
-    use_velocity_baseline: bool,
-    kinetic_weight: float,
-) -> MPPITrajectoryEvaluation:
-    """
-    Estimates trajectory likelihoods by adding noise to each coordinate separately.
-    The constraint residuals for noisy trajectories are first computed. These preserve
-    temporal information about when the constraints were violated. Then, relative
-    kinetic energy likelihoods for each point are computed according to the resulting
-    delta. The normalization factor cancels out, which is why the delta alone is sufficient.
-    """
-
-    b = noise_B_T_A_D.shape[0]
-    t = trajectory_T_A_D.shape[0]
-    a = trajectory_T_A_D.shape[1]
-    o = problem.num_circular_obstacles
-    result = {
-        "agent_agent": np.ones((b, t, a, a), dtype=np.float32),
-        "agent_obstacle": np.ones((b, t, a, o), dtype=np.float32),
-        "velocity": np.ones((b, t, a), dtype=np.float32),
-        "kinetic_energy": np.ones((b, t, a), dtype=np.float32),
-    }
-
-    # (b, t, a, a)
-    agent_agent_ok = (
-        compute_agent_agent_constraint_residuals(
-            problem, noise_B_T_A_D + trajectory_T_A_D
-        )
-        <= agent_agent_constraint_tolerance
-    )
-    # (b, t, a, o)
-    agent_obstacle_ok = (
-        compute_agent_circular_obstacle_constraint_residuals(
-            problem, noise_B_T_A_D + trajectory_T_A_D
-        )
-        <= agent_obstacle_constraint_tolerance
-    )
-
-    velocity_squared_baseline = (
-        (trajectory_T_A_D[1:] - trajectory_T_A_D[:-1]) ** 2
-    ).sum(axis=-1)
-    # Same endpoint, but adding noise to starting point. The start point doesn't matter because it's fixed
-    # to the agent's current position.
-    velocity_squared_per_deviation_reverse = (
-        ((trajectory_T_A_D[1:] + noise_B_T_A_D[:, 1:]) - trajectory_T_A_D[:-1]) ** 2
-    ).sum(axis=-1)
-    velocity_squared_per_deviation_forward = (
-        ((trajectory_T_A_D[1:]) - (trajectory_T_A_D[:-1] + noise_B_T_A_D[:, :-1])) ** 2
-    ).sum(axis=-1)
-
-    # (b, t, a)
-    velocity_constraint_residual_baseline = (
-        np.sqrt(velocity_squared_baseline) - problem.agent_max_speeds
-    )
-    velocity_constraint_residual_per_deviation_reverse = (
-        np.sqrt(velocity_squared_per_deviation_reverse) - problem.agent_max_speeds
-    )
-    velocity_constraint_residual_per_deviation_forward = (
-        np.sqrt(velocity_squared_per_deviation_forward) - problem.agent_max_speeds
-    )
-
-    result["agent_agent"] = agent_agent_ok.astype(np.float32)
-    result["agent_obstacle"] = agent_obstacle_ok.astype(np.float32)
-
-    velocity_ok_reverse = (
-        velocity_constraint_residual_per_deviation_reverse
-        < velocity_constraint_tolerance
-    )
-    velocity_ok_forward = (
-        velocity_constraint_residual_per_deviation_forward
-        < velocity_constraint_tolerance
-    )
-    velocity_ok_baseline = (
-        velocity_constraint_residual_baseline < velocity_constraint_tolerance
-    )
-
-    if use_velocity_baseline:
-        # When using the 'baseline', don't disregard trajectories for which the original case was invalid.
-        velocity_ok_forward = velocity_ok_forward | (
-            ~velocity_ok_forward & ~velocity_ok_baseline
-        )
-        velocity_ok_reverse = velocity_ok_reverse | (
-            ~velocity_ok_reverse & ~velocity_ok_baseline
-        )
-
-    # Only apply velocity constraint effects to points after the starting point.
-    result["velocity"][:, 1:] *= velocity_ok_forward.astype(np.float32)
-    result["velocity"][:, :-1] *= velocity_ok_reverse.astype(np.float32)
-
-    # Evaluate kinetic energy change.
-    delta_kinetic_energy_per_deviation_reverse = 0.5 * (
-        velocity_squared_per_deviation_reverse - velocity_squared_baseline
-    )
-    delta_kinetic_energy_per_deviation_reverse -= np.mean(
-        delta_kinetic_energy_per_deviation_reverse
-    )
-    delta_kinetic_energy_per_deviation_reverse /= (
-        np.std(delta_kinetic_energy_per_deviation_reverse) + 1e-8
-    )
-    delta_kinetic_energy_per_deviation_forward = 0.5 * (
-        velocity_squared_per_deviation_forward - velocity_squared_baseline
-    )
-    delta_kinetic_energy_per_deviation_forward -= np.mean(
-        delta_kinetic_energy_per_deviation_forward
-    )
-    delta_kinetic_energy_per_deviation_forward /= (
-        np.std(delta_kinetic_energy_per_deviation_forward) + 1e-8
-    )
-
-    result["kinetic_energy"][:, 1:] *= np.exp(
-        -delta_kinetic_energy_per_deviation_reverse * kinetic_weight
-    )
-    result["kinetic_energy"][:, :-1] *= np.exp(
-        -delta_kinetic_energy_per_deviation_forward * kinetic_weight
-    )
-
-    return MPPITrajectoryEvaluation(
-        agent_agent=result["agent_agent"],
-        agent_obstacle=result["agent_obstacle"],
-        velocity=result["velocity"],
-        kinetic_energy=result["kinetic_energy"],
-    )
-
-
-def compute_score_mppi_factorized(
-    trajectory_T_A_D: np.ndarray,
-    problem: Problem[np.ndarray],
-    sigma: float,
-    num_samples: int,
-    kinetic_weight: float,
-    **kwargs,
-):
-    noise_B_T_A_D = (
-        np.random.normal(size=(num_samples, *trajectory_T_A_D.shape)) * sigma
-    )
-    evaluation = evaluate_trajectory_unscaled_probabilities_factorized(
-        trajectory_T_A_D,
-        noise_B_T_A_D,
-        problem,
-        agent_agent_constraint_tolerance=0,
-        agent_obstacle_constraint_tolerance=0,
-        velocity_constraint_tolerance=0,
-        use_velocity_baseline=True,
-        kinetic_weight=kinetic_weight,
-    )
-    # Compute scores for each factor.
-    eps = 1e-8
-    agent_agent_weights = evaluation.agent_agent / (
-        np.sum(evaluation.agent_agent, axis=0) + eps
-    )
-    agent_obstacle_weights = evaluation.agent_obstacle / (
-        np.sum(evaluation.agent_obstacle, axis=0) + eps
-    )
-    velocity_weights = evaluation.velocity / (np.sum(evaluation.velocity, axis=0) + eps)
-    kinetic_energy_weights = evaluation.kinetic_energy / (
-        np.sum(evaluation.kinetic_energy, axis=0) + eps
-    )
-    total_weights = (
-        agent_agent_weights.sum(axis=-1)
-        + agent_obstacle_weights.sum(axis=-1)
-        + velocity_weights
-        + kinetic_energy_weights
-    )
-    score = np.sum(noise_B_T_A_D * total_weights[:, :, :, None], axis=0)
-    return score
-
-
-ARC_CENTER_X_DIM = 0
-ARC_CENTER_Y_DIM = 1
-ARC_RADIUS_DIM = 2
-ARC_THETA1_DIM = 3
-ARC_THETA2_DIM = 4
-ARC_SIGN_DIM = 5
-
-DISK_CENTER_X_DIM = 0
-DISK_CENTER_Y_DIM = 1
-DISK_RADIUS_DIM = 2
-DISK_SIGN_DIM = 3
-
-
-def compute_feasibility_score_numerator(
-    xy: np.ndarray, sigma: float, boundaries: np.ndarray, n_points: int = 10
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    An improved approach for computing the score using line integrals.
-
-    Args:
-    - xy: (N, 2) array of points at which to evaluate the score.
-    - sigma: stddev for Gaussian.
-    - surfaces: (N, S, 6) array of (center_x, center_y, radius, theta1, theta2, sign). The first dimension may be 1 if the surfaces are shared across all inputs.
-
-    The sign indicates whether it is an "exclusion" or "inclusion" constraint. These constraint
-    surfaces can be created by computing the intersection points between each of the obstacles.
-    Here, it's assumed that the constraint surfaces are piecewise arcs, because the feasible set
-    is created through the intersection of disks, which have boundaries which are arcs. The
-    denominator is estimated by sampling several points around the current location and checking
-    for feasibility. For now, if it's found to be too low, the numerator will be normalized to
-    have a magnitude of 1.
-    """
-
-    # (N, S). S is the number of surfaces.
-    center_x = boundaries[:, :, ARC_CENTER_X_DIM]
-    center_y = boundaries[:, :, ARC_CENTER_Y_DIM]
-    radius = boundaries[:, :, ARC_RADIUS_DIM]
-    theta1 = boundaries[:, :, ARC_THETA1_DIM]
-    theta2 = boundaries[:, :, ARC_THETA2_DIM]
-    sign = boundaries[:, :, ARC_SIGN_DIM]
-
-    # (N, T, S). T is the number of points sampled along each surface.
-    theta = np.linspace(theta1, theta2, num=n_points, endpoint=False, axis=1)
-    n_x = np.cos(theta)
-    n_y = np.sin(theta)
-    # (N, S)
-    dtheta = theta[:, 1, :] - theta[:, 0, :]
-    # (N, T, S) <- (N, :, S) + (N, :, S) * (N, T, S)
-    x = center_x[:, np.newaxis, :] + radius[:, np.newaxis, :] * n_x
-    y = center_y[:, np.newaxis, :] + radius[:, np.newaxis, :] * n_y
-    # (N, S) <- (N, S) * (N, S)
-    ds = dtheta * radius
-
-    # (N, T, S) <- (N, T, S) - (N, :, :). N is the number of points at which the score is being evaluated.
-    delta_x = x - xy[:, 0, np.newaxis, np.newaxis]
-    delta_y = y - xy[:, 1, np.newaxis, np.newaxis]
-    exp_arg = -0.5 * (delta_x**2 + delta_y**2) / (sigma**2)
-    log_scaler = exp_arg.max(axis=-1).max(axis=-1)
-    exp_arg_adjusted = exp_arg - log_scaler[:, np.newaxis, np.newaxis]
-
-    gaussian_pdf = np.exp(exp_arg_adjusted) / (2 * np.pi * sigma**2)
-
-    # (N, T, S) <- (N, :, S) * (N, T, S) * (N, :, S) * (N, T, S)
-    integrand_x = sign[:, np.newaxis, :] * gaussian_pdf * ds[:, np.newaxis, :] * n_x
-    integrand_y = sign[:, np.newaxis, :] * gaussian_pdf * ds[:, np.newaxis, :] * n_y
-
-    # (N,) <- sum over T and S of (N, T, S)
-    integral_x = np.sum(np.sum(integrand_x, axis=-1), axis=-1)
-    integral_y = np.sum(np.sum(integrand_y, axis=-1), axis=-1)
-
-    """
-    delta_min can be used to compare with the denominator.
-    If the denominator is large, the numerator can essentially be discarded.
-    If the denominator is small, the delta_min can be discarded and the numerator
-    can be normalized to have a magnitude of 1, since the direction is still
-    informative.
-    """
-
-    return np.stack([integral_x, integral_y], axis=-1), log_scaler
-
-
-def compute_feasibility_score_denominator(
-    xy: np.ndarray, sigma: float, disks: np.ndarray, n_samples: int = 100
-):
-    """
-    Computes feasibility by sampling around the current point and checking whether the results
-    lie inside the disks or not. The disks are (center_x, center_y, radius, sign) tuples. There
-    is no theta 1 or theta 2 in this case.
-
-    xy: (N, 2) - N is the number of points for which the score is being evaluated.
-    """
-
-    # (S,). S is the number of disks.
-    center_x = disks[:, 0]
-    center_y = disks[:, 1]
-    radius = disks[:, 2]
-    sign = disks[:, 3]
-
-    # (B, N, 2). B is the number of samples, N is the number of points, 2 is for x and y.
-    xy_noise = (
-        xy[np.newaxis, :, :] + np.random.normal(size=(n_samples, *xy.shape)) * sigma
-    )
-    # (B, N, S) <- (B, N, :) - (S)
-    xy_distances = np.sqrt(
-        (xy_noise[:, :, np.newaxis, 0] - center_x) ** 2
-        + (xy_noise[:, :, np.newaxis, 1] - center_y) ** 2
-    )
-
-    # (B, N, S) <- (B, N, S) compared to (S)
-    inside = xy_distances <= radius
-    outside = xy_distances >= radius
-
-    # (B, N) <- all(axis=-1) of (B, N, S) <- (B, N, S) & (S)
-    ok = np.all(outside & (sign == 1) | inside & (sign == -1), axis=-1)
-    # (N,) <- mean(axis=0) of (B, N)
-    ok_fraction = ok.mean(axis=0)
-
-    return ok_fraction
-
-
-def compute_score_from_boundary_integrals(
-    trajectory: np.ndarray,
-    problem: Problem[np.ndarray],
-    sigma: float,
-    obstacle_boundaries: np.ndarray,
-    include_kinetic: bool,
-):
-    score = np.zeros_like(trajectory)
-    for agent_i in range(trajectory.shape[1]):
-        num_other_agents = trajectory.shape[1] - 1
-
-        # Initialize surfaces with obstacles.
-        boundaries = np.zeros(
-            (trajectory.shape[0], obstacle_boundaries.shape[0] + num_other_agents, 6)
-        )
-        boundaries[:, : obstacle_boundaries.shape[0], :] = obstacle_boundaries
-        boundaries[:, : obstacle_boundaries.shape[0], ARC_RADIUS_DIM] += (
-            problem.agent_radii[agent_i]
-        )
-
-        # Initialize disks with obstacles. We must select indices carefully here because we're translating between two array formats.
-        disks = np.zeros(
-            (trajectory.shape[0], obstacle_boundaries.shape[0] + num_other_agents, 4)
-        )
-        disks[
-            :,
-            : obstacle_boundaries.shape[0],
-            [DISK_CENTER_X_DIM, DISK_CENTER_Y_DIM, DISK_RADIUS_DIM, DISK_SIGN_DIM],
-        ] = obstacle_boundaries[
-            :, [ARC_CENTER_X_DIM, ARC_CENTER_Y_DIM, ARC_RADIUS_DIM, ARC_SIGN_DIM]
-        ]
-        disks[:, : obstacle_boundaries.shape[0], DISK_RADIUS_DIM] += (
-            problem.agent_radii[agent_i]
-        )
-
-        # Include other agents as surfaces and disks.
-        target_indices = []
-        source_indices = []
-        index = obstacle_boundaries.shape[0]
-        for other_agent_i in range(trajectory.shape[1]):
-            if other_agent_i == agent_i:
-                continue
-
-            source_indices.append(other_agent_i)
-            target_indices.append(index)
-            index += 1
-
-        # Create new surfaces for agent-agent interactions.
-        # These are circles around the other agents with radius equal to the sum of the agent radii.
-        other_agent_trajectories = trajectory[:, source_indices, :]
-        r = problem.agent_radii[agent_i] + problem.agent_radii[source_indices]
-        boundaries[:, target_indices, ARC_CENTER_X_DIM] = other_agent_trajectories[
-            :, :, 0
-        ]
-        boundaries[:, target_indices, ARC_CENTER_Y_DIM] = other_agent_trajectories[
-            :, :, 1
-        ]
-        boundaries[:, target_indices, ARC_RADIUS_DIM] = r
-        boundaries[:, target_indices, ARC_THETA1_DIM] = 0
-        boundaries[:, target_indices, ARC_THETA2_DIM] = 2 * np.pi
-        boundaries[:, target_indices, ARC_SIGN_DIM] = 1.0
-
-        disks[:, target_indices, DISK_CENTER_X_DIM] = other_agent_trajectories[:, :, 0]
-        disks[:, target_indices, DISK_CENTER_Y_DIM] = other_agent_trajectories[:, :, 1]
-        disks[:, target_indices, DISK_RADIUS_DIM] = r
-        disks[:, target_indices, DISK_SIGN_DIM] = 1.0
-
-        xy = trajectory[:, agent_i, :]
-
-        eps = 1e-12
-        numer, log_numer_scaler = compute_feasibility_score_numerator(
-            xy, sigma, boundaries
-        )
-        denom = compute_feasibility_score_denominator(xy, sigma, disks)
-
-        numer_scaler = np.maximum(np.exp(log_numer_scaler), eps * (denom < 0.5))
-        numer_scaler = np.exp(log_numer_scaler)
-
-        obs_feas_score = (
-            numer * numer_scaler[:, np.newaxis] / (denom[:, np.newaxis] + eps)
-        )
-        obs_feas_score_mag = np.linalg.norm(obs_feas_score, axis=-1, keepdims=True)
-        obs_feas_score = obs_feas_score / np.maximum(obs_feas_score_mag, 1.0)
-
-        # Object feasibility component.
-        score[:, agent_i, :] = obs_feas_score
-
-        # Kinetic energy component.
-        if include_kinetic:
-            mu = (trajectory[2:, agent_i, :] + trajectory[:-2, agent_i, :]) / 2
-            score[1:-1, agent_i, :] += (
-                1 / (1 + sigma**2) * (mu - trajectory[1:-1, agent_i, :])
-            ) * 0.5
-
-    return score
