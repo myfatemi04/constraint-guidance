@@ -27,9 +27,9 @@ def main_pyvisgraph():
     polygons = []
     circle_approximation_num_sides = 6
 
-    for i in range(problem.num_obstacles):
-        x, y = problem.obstacle_positions[i]
-        r = problem.obstacle_radii[i]
+    for i in range(problem.num_circular_obstacles):
+        x, y = problem.circular_obstacle_positions[i]
+        r = problem.circular_obstacle_radii[i]
         polygon = [
             pyvisgraph.Point(
                 x + r * np.cos(j * 2 * np.pi / circle_approximation_num_sides),
@@ -253,9 +253,9 @@ def main():
     polygons = []
     circle_approximation_num_sides = 6
 
-    for obstacle_i in range(problem.num_obstacles):
-        x, y = problem.obstacle_positions[obstacle_i]
-        r = problem.obstacle_radii[obstacle_i] + problem.agent_radii[0]
+    for obstacle_i in range(problem.num_circular_obstacles):
+        x, y = problem.circular_obstacle_positions[obstacle_i]
+        r = problem.circular_obstacle_radii[obstacle_i] + problem.agent_radii[0]
         polygons.append(
             np.array(
                 [
@@ -443,9 +443,9 @@ def _create_voronoi_polygon(
     polygons = []
     circle_approximation_num_sides = 32
 
-    for obstacle_i in range(problem.num_obstacles):
-        x, y = problem.obstacle_positions[obstacle_i]
-        r = problem.obstacle_radii[obstacle_i] + problem.agent_radii[0]
+    for obstacle_i in range(problem.num_circular_obstacles):
+        x, y = problem.circular_obstacle_positions[obstacle_i]
+        r = problem.circular_obstacle_radii[obstacle_i] + problem.agent_radii[0]
         polygons.append(
             np.array(
                 [
@@ -493,8 +493,8 @@ def main_voronoi():
     _voronoi_plot_2d(
         vor,
         plt.gca(),
-        problem.obstacle_positions,
-        problem.obstacle_radii,
+        problem.circular_obstacle_positions,
+        problem.circular_obstacle_radii,
         show_points=False,
         show_vertices=False,
     )
@@ -586,8 +586,8 @@ def interpolate(path: np.ndarray, dt, speed):
 def _get_voronoi_graph(problem: Problem, voronoi: Voronoi) -> nx.Graph:
     dict_graph = _get_graph_without_vertices_in_obstacles(
         voronoi,
-        problem.obstacle_positions,
-        problem.obstacle_radii,
+        problem.circular_obstacle_positions,
+        problem.circular_obstacle_radii,
         problem.agent_radii[0],
     )
     _remove_tree_vertices(dict_graph)

@@ -53,8 +53,12 @@ class Problem(Generic[TensorType]):
     agent_reference_trajectory: TensorType | None
     agent_radii: TensorType
     agent_max_speeds: TensorType
-    obstacle_positions: TensorType
-    obstacle_radii: TensorType
+
+    # These fields are for the 'map'.
+    circular_obstacle_positions: TensorType
+    circular_obstacle_radii: TensorType
+    axis_aligned_box_obstacle_bounds: TensorType
+
     identifier: str | None = None
 
     @property
@@ -62,8 +66,8 @@ class Problem(Generic[TensorType]):
         return self.agent_start_positions.shape[0]
 
     @property
-    def num_obstacles(self):
-        return self.obstacle_positions.shape[0]
+    def num_circular_obstacles(self):
+        return self.circular_obstacle_positions.shape[0]
 
     @staticmethod
     def _as_numpy(array: torch.Tensor | np.ndarray) -> np.ndarray:

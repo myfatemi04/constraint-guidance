@@ -41,7 +41,7 @@ def solve_alm(
         (problem.num_timesteps, problem.num_agents, problem.num_agents)
     )
     agent_obstacle_nu = np.zeros(
-        (problem.num_timesteps, problem.num_agents, problem.num_obstacles)
+        (problem.num_timesteps, problem.num_agents, problem.num_circular_obstacles)
     )
     velocity_nu = np.zeros((problem.num_timesteps - 1, problem.num_agents))
     rho = 0.05
@@ -57,7 +57,8 @@ def solve_alm(
                 trajectory[:, :, None, :] - trajectory[:, None, :, :]
             )
             agent_obstacle_displacements = (
-                trajectory[:, :, None, :] - problem.obstacle_positions[None, None, :, :]
+                trajectory[:, :, None, :]
+                - problem.circular_obstacle_positions[None, None, :, :]
             )
             agent_stepwise_displacements = trajectory[1:, :, :] - trajectory[:-1, :, :]
             agent_agent_distances = np.linalg.norm(agent_agent_displacements, axis=-1)
@@ -69,7 +70,7 @@ def solve_alm(
                 problem.agent_radii[None, :] + problem.agent_radii[:, None]
             )
             agent_obstacle_constraint_functions = agent_obstacle_distances - (
-                problem.agent_radii[:, None] + problem.obstacle_radii[None, :]
+                problem.agent_radii[:, None] + problem.circular_obstacle_radii[None, :]
             )
             agent_velocity_constraint_functions = -(
                 agent_displacements - problem.agent_max_speeds

@@ -627,7 +627,7 @@ def apply_projection_alm(problem: "Problem"):
 
     num_timesteps = problem.num_timesteps
     num_agents = problem.num_agents
-    num_obs = problem.num_obstacles
+    num_obs = problem.num_circular_obstacles
     agents_starts_pos = problem.agent_start_positions
     agents_goals_pos = problem.agent_end_positions
 
@@ -657,8 +657,8 @@ def apply_projection_alm(problem: "Problem"):
 
     init_d_o, init_d_a, init_d_dyn = cal_dummy_var(
         problem.agent_radii,
-        problem.obstacle_positions,
-        problem.obstacle_radii,
+        problem.circular_obstacle_positions,
+        problem.circular_obstacle_radii,
         problem.agent_reference_trajectory,
         start_idx=start_idx,
         end_idx=end_idx,
@@ -679,8 +679,8 @@ def apply_projection_alm(problem: "Problem"):
 
     agents_rads = problem.agent_radii
     agents_max_speeds = problem.agent_max_speeds
-    obs_pos = problem.obstacle_positions
-    obs_rads = problem.obstacle_radii
+    obs_pos = problem.circular_obstacle_positions
+    obs_rads = problem.circular_obstacle_radii
     x_iteration = problem.agent_reference_trajectory.copy()
     other_agents = None
     nu_dyn = None
@@ -746,8 +746,8 @@ def apply_projection_alm(problem: "Problem"):
 
         grad_nu_o, grad_nu_a, grad_nu_dyn = grad_nu(
             problem.agent_radii,
-            problem.obstacle_positions,
-            problem.obstacle_radii,
+            problem.circular_obstacle_positions,
+            problem.circular_obstacle_radii,
             x_iteration,
             d_o,
             d_a,
@@ -762,7 +762,7 @@ def apply_projection_alm(problem: "Problem"):
         fea_o_real, fea_a_real, fea_dyn_real = check_feasibility(
             agents_rads,
             obs_pos,
-            problem.obstacle_radii,
+            problem.circular_obstacle_radii,
             x_iteration,
             d_o,
             d_a,

@@ -45,13 +45,13 @@ class AgentObstacleDebugger:
 
     def _setup_quivers(self):
         """Initialize quivers over each obstacle with random vectors."""
-        for obstacle in range(self.problem.obstacle_positions.shape[0]):
+        for obstacle in range(self.problem.circular_obstacle_positions.shape[0]):
             # Random initial vectors
             u, v = np.random.randn(2)
 
             quiver = self.ax.quiver(
-                self.problem.obstacle_positions[obstacle, 0],
-                self.problem.obstacle_positions[obstacle, 1],
+                self.problem.circular_obstacle_positions[obstacle, 0],
+                self.problem.circular_obstacle_positions[obstacle, 1],
                 u,
                 v,
                 scale=5,
@@ -62,8 +62,8 @@ class AgentObstacleDebugger:
             self.quivers.append(
                 (
                     quiver,
-                    self.problem.obstacle_positions[obstacle, 0],
-                    self.problem.obstacle_positions[obstacle, 1],
+                    self.problem.circular_obstacle_positions[obstacle, 0],
+                    self.problem.circular_obstacle_positions[obstacle, 1],
                 )
             )
 
@@ -83,12 +83,18 @@ class AgentObstacleDebugger:
             self.position_circle.center = (self.x, self.y)
             self.position_circle.radius = self.sigma
 
-        sigma_batch = np.full((self.problem.obstacle_positions.shape[0],), self.sigma)
-        agent_x_B = np.full((self.problem.obstacle_positions.shape[0],), self.x)
-        agent_y_B = np.full((self.problem.obstacle_positions.shape[0],), self.y)
-        obs_x_B = self.problem.obstacle_positions[:, 0]
-        obs_y_B = self.problem.obstacle_positions[:, 1]
-        obs_rad_B = self.problem.obstacle_radii + self.agent_radius
+        sigma_batch = np.full(
+            (self.problem.circular_obstacle_positions.shape[0],), self.sigma
+        )
+        agent_x_B = np.full(
+            (self.problem.circular_obstacle_positions.shape[0],), self.x
+        )
+        agent_y_B = np.full(
+            (self.problem.circular_obstacle_positions.shape[0],), self.y
+        )
+        obs_x_B = self.problem.circular_obstacle_positions[:, 0]
+        obs_y_B = self.problem.circular_obstacle_positions[:, 1]
+        obs_rad_B = self.problem.circular_obstacle_radii + self.agent_radius
 
         scores_B = compute_agent_obstacle_score_batched_helper(
             agent_x_B,

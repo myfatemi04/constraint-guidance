@@ -351,16 +351,18 @@ def compute_agent_obstacle_score_from_problem(
     # Create batch for agent-obstacle interactions.
     agent_x_T_A = trajectory[:, :, 0]
     agent_y_T_A = trajectory[:, :, 1]
-    obstacle_x_O = problem.obstacle_positions[:, 0]
-    obstacle_y_O = problem.obstacle_positions[:, 1]
-    obstacle_rad_O = problem.obstacle_radii
-    sigma_OA = sigma * np.ones(problem.obstacle_radii.shape[0] * trajectory.shape[1])
+    obstacle_x_O = problem.circular_obstacle_positions[:, 0]
+    obstacle_y_O = problem.circular_obstacle_positions[:, 1]
+    obstacle_rad_O = problem.circular_obstacle_radii
+    sigma_OA = sigma * np.ones(
+        problem.circular_obstacle_radii.shape[0] * trajectory.shape[1]
+    )
 
     agent_x_T_A_O = np.repeat(
-        agent_x_T_A[:, :, None], problem.obstacle_positions.shape[0], axis=2
+        agent_x_T_A[:, :, None], problem.circular_obstacle_positions.shape[0], axis=2
     )
     agent_y_T_A_O = np.repeat(
-        agent_y_T_A[:, :, None], problem.obstacle_positions.shape[0], axis=2
+        agent_y_T_A[:, :, None], problem.circular_obstacle_positions.shape[0], axis=2
     )
     obstacle_x_T_A_O = np.repeat(
         obstacle_x_O[None, None, :], trajectory.shape[0], axis=0
@@ -430,7 +432,7 @@ def compute_agent_obstacle_score_from_problem(
     score_T_A_O_D = score_flat[: T * A * O, :].reshape(
         trajectory.shape[0],
         trajectory.shape[1],
-        problem.obstacle_positions.shape[0],
+        problem.circular_obstacle_positions.shape[0],
         2,
     )
     score_T_A1_A2_D = score_flat[T * A * O :, :].reshape(
@@ -590,7 +592,7 @@ def evaluate_trajectory_unscaled_probabilities_factorized(
     b = noise_B_T_A_D.shape[0]
     t = trajectory_T_A_D.shape[0]
     a = trajectory_T_A_D.shape[1]
-    o = problem.num_obstacles
+    o = problem.num_circular_obstacles
     result = {
         "agent_agent": np.ones((b, t, a, a), dtype=np.float32),
         "agent_obstacle": np.ones((b, t, a, o), dtype=np.float32),

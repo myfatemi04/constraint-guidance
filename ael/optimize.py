@@ -39,7 +39,12 @@ def main():
                 (batch_size, horizon, problem.num_agents, problem.num_agents)
             )
             nu_agent_obstacle = torch.zeros(
-                (batch_size, horizon, problem.num_agents, problem.num_obstacles)
+                (
+                    batch_size,
+                    horizon,
+                    problem.num_agents,
+                    problem.num_circular_obstacles,
+                )
             )
             nu_lowlevel_vel = torch.zeros((batch_size, horizon - 1, problem.num_agents))
             transition_by = 1000
@@ -68,7 +73,12 @@ def main():
                     (batch_size, horizon, problem.num_agents, problem.num_agents)
                 ),
                 agent_obstacle_distances=torch.zeros(
-                    (batch_size, horizon, problem.num_agents, problem.num_obstacles)
+                    (
+                        batch_size,
+                        horizon,
+                        problem.num_agents,
+                        problem.num_circular_obstacles,
+                    )
                 ),
                 agent_positions=torch.randn(
                     (batch_size, horizon, problem.num_agents, 2), requires_grad=True
@@ -108,7 +118,7 @@ def main():
                         # (b, t, a, d) -> (b, t, a, 1, d)
                         sol.agent_positions.unsqueeze(-2)
                         # (o, d) -> (1, 1, 1, o, d)
-                        - problem.obstacle_positions.unsqueeze(0)
+                        - problem.circular_obstacle_positions.unsqueeze(0)
                         .unsqueeze(0)
                         .unsqueeze(0)
                     )
@@ -119,7 +129,7 @@ def main():
                     # (a) -> (1, 1, a, 1)
                     # (o) -> (1, 1, 1, o)
                     problem.agent_radii.view(1, 1, -1, 1)
-                    + problem.obstacle_radii.view(1, 1, 1, -1)
+                    + problem.circular_obstacle_radii.view(1, 1, 1, -1)
                 ).pow(2)
                 agent_obstacle_constraint = torch.relu(-obstacle_signed_distances)
 

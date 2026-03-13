@@ -46,13 +46,13 @@ class VelocityDebugger:
 
     def _setup_quivers(self):
         """Initialize quivers over each obstacle with random vectors."""
-        for obstacle in range(self.problem.obstacle_positions.shape[0]):
+        for obstacle in range(self.problem.circular_obstacle_positions.shape[0]):
             # Random initial vectors
             u, v = np.random.randn(2)
 
             quiver = self.ax.quiver(
-                self.problem.obstacle_positions[obstacle, 0],
-                self.problem.obstacle_positions[obstacle, 1],
+                self.problem.circular_obstacle_positions[obstacle, 0],
+                self.problem.circular_obstacle_positions[obstacle, 1],
                 u,
                 v,
                 scale=5,
@@ -63,8 +63,8 @@ class VelocityDebugger:
             self.quivers.append(
                 (
                     quiver,
-                    self.problem.obstacle_positions[obstacle, 0],
-                    self.problem.obstacle_positions[obstacle, 1],
+                    self.problem.circular_obstacle_positions[obstacle, 0],
+                    self.problem.circular_obstacle_positions[obstacle, 1],
                 )
             )
 

@@ -75,8 +75,8 @@ def compute_obstacle_boundaries(problem: Problem[np.ndarray]) -> np.ndarray:
 
     obstacle_circles = np.concatenate(
         [
-            problem.obstacle_positions,
-            problem.obstacle_radii[:, np.newaxis],
+            problem.circular_obstacle_positions,
+            problem.circular_obstacle_radii[:, np.newaxis],
         ],
         axis=1,
     )
@@ -111,7 +111,7 @@ def compute_obstacle_boundaries(problem: Problem[np.ndarray]) -> np.ndarray:
             ],
             axis=-1,
         )
-        for i in range(len(problem.obstacle_positions))
+        for i in range(len(problem.circular_obstacle_positions))
     ]
     # (o, s, o)
     midpoint_signed_distances = [
@@ -122,9 +122,9 @@ def compute_obstacle_boundaries(problem: Problem[np.ndarray]) -> np.ndarray:
             axis=-1,
         )
         - obstacle_circles[np.newaxis, :, 2]
-        for i in range(len(problem.obstacle_positions))
+        for i in range(len(problem.circular_obstacle_positions))
     ]
-    for i in range(len(problem.obstacle_positions)):
+    for i in range(len(problem.circular_obstacle_positions)):
         # We check if we should delete an arc by checking if the signed distance between the midpoint and the other obstacle is negative.
         # However, we need to ignore the distance to the obstacle itself, just to avoid misclassifications in case of numerical issues.
         midpoint_signed_distances[i][:, i] = 1.0
@@ -132,12 +132,13 @@ def compute_obstacle_boundaries(problem: Problem[np.ndarray]) -> np.ndarray:
     # (o, s) boolean of whether each surface is valid (not inside another obstacle)
     midpoint_inclusions = [
         np.any(midpoint_signed_distances[i] < 0, axis=-1)
-        for i in range(len(problem.obstacle_positions))
+        for i in range(len(problem.circular_obstacle_positions))
     ]
 
     # (o, s, 2) of start and end angles for each valid surface.
     obstacle_surfaces = [
-        spans[i][midpoint_inclusions[i]] for i in range(len(problem.obstacle_positions))
+        spans[i][midpoint_inclusions[i]]
+        for i in range(len(problem.circular_obstacle_positions))
     ]
 
     n_surfaces = sum(len(s) for s in obstacle_surfaces)
@@ -147,7 +148,7 @@ def compute_obstacle_boundaries(problem: Problem[np.ndarray]) -> np.ndarray:
     )
 
     pointer = 0
-    for i in range(len(problem.obstacle_positions)):
+    for i in range(len(problem.circular_obstacle_positions)):
         # (center_x, center_y, radius, theta1, theta2, sign)
         result[pointer : pointer + len(obstacle_surfaces[i]), :3] = obstacle_circles[i]
         result[pointer : pointer + len(obstacle_surfaces[i]), 3:5] = obstacle_surfaces[

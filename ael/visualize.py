@@ -19,11 +19,14 @@ def visualize(
     end_markersize: float = 10.0,
 ):
     # Plot the obstacles
-    for obs_index in range(problem.num_obstacles):
-        x, y = problem.obstacle_positions[obs_index].tolist()
+    for obs_index in range(problem.num_circular_obstacles):
+        x, y = problem.circular_obstacle_positions[obs_index].tolist()
         ax.add_patch(
             patches.Circle(
-                (x, y), problem.obstacle_radii[obs_index].item(), color="r", alpha=0.5
+                (x, y),
+                problem.circular_obstacle_radii[obs_index].item(),
+                color="r",
+                alpha=0.5,
             )
         )
 

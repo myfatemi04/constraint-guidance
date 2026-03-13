@@ -24,14 +24,15 @@ def compute_agent_obstacle_constraint_residuals(
     agent_obstacle_distances_b_T_A_O = (
         # ([b], t, num_agents, 1, 2) - (1, num_obstacles, 2) -> ([b], t, num_agents, num_obstacles, 2)
         trajectory_b_T_A_D[..., :, np.newaxis, :]
-        - problem.obstacle_positions[np.newaxis, :, :]
+        - problem.circular_obstacle_positions[np.newaxis, :, :]
     )
     agent_obstacle_distances_b_T_A_O = np.linalg.norm(
         agent_obstacle_distances_b_T_A_O, axis=-1
     )
     min_acceptable_agent_obstacle_distances_A_O = (
         # (num_agents, 1) + (1, num_obstacles) -> (num_agents, num_obstacles)
-        problem.agent_radii[:, np.newaxis] + problem.obstacle_radii[np.newaxis, :]
+        problem.agent_radii[:, np.newaxis]
+        + problem.circular_obstacle_radii[np.newaxis, :]
     )
     agent_obstacle_constraint_residuals_b_T_A_O = (
         min_acceptable_agent_obstacle_distances_A_O - agent_obstacle_distances_b_T_A_O
