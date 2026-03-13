@@ -9,6 +9,7 @@ from ael.constraint_evaluation import (
     compute_constraint_residuals,
 )
 from ael.problem import Problem
+from ael.score_box import box_exclusion_score_and_likelihood
 
 
 def clip_magnitude(vector, max_magnitude):
@@ -442,13 +443,23 @@ def compute_agent_obstacle_score_from_problem(
     return score_T_A_O_D, score_T_A1_A2_D
 
 
+def compute_agent_obstacle_score_rectangular_obstacles(xy_T_B_D, boxes_O_D_2, sigma):
+    T, B, D = xy_T_B_D.shape
+    xy_TB_1_D = xy_T_B_D.reshape(T * B, 1, D)
+    boxes_1_O_D_2 = boxes_O_D_2.reshape(1, boxes_O_D_2.shape[0], D, 2)
+    score_TB_O_D, likelihood_TB_O = box_exclusion_score_and_likelihood(
+        xy_TB_1_D, boxes_1_O_D_2, sigma
+    )
+    score_T_B_D = score_TB_O_D.sum(axis=1).reshape(T, B, D)
+    return score_T_B_D
+
+
 def compute_score(
     xy_T_B_D,
     problem: Problem[np.ndarray],
     sigma,
     include_obstacles,
     kinetic_weight,
-    magnitude_clip,
     n_integral,
 ):
     """
