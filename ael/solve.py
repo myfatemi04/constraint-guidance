@@ -78,6 +78,7 @@ class ScoreComputationMethod(str, enum.Enum):
     FACTORIZED_MPPI = "factorized_mppi"
     BOUNDARY_INTEGRALS = "boundary_integrals"
     VORONOI_GUIDANCE = "voronoi_guidance"
+    NONE_BASELINE = "none_baseline"
 
 
 STEPS = 500
@@ -114,6 +115,7 @@ DEFAULT_SCHEDULES: dict[ScoreComputationMethod, list[ScheduleEntry]] = {
     ],
     ScoreComputationMethod.BOUNDARY_INTEGRALS: DEFAULT_SCHEDULE_BOUNDARY_INTEGRALS,
     ScoreComputationMethod.VORONOI_GUIDANCE: DEFAULT_SCHEDULE_APPROXIMATE_V0,
+    ScoreComputationMethod.NONE_BASELINE: [],  # uses Voronoi as-is
 }
 
 
@@ -149,8 +151,6 @@ def solve(
     ]:
         obstacle_boundaries = compute_obstacle_boundaries(problem)
 
-    trajectories = []
-
     # initialize trajectory to the first path for each agent
     if initial_paths is not None:
         for agent_index in range(problem.num_agents):
@@ -161,6 +161,8 @@ def solve(
             trajectory[:, agent_index, :] = target_paths_by_agent[agent_index]
     # target_paths_by_agent = None
 
+    trajectories = [trajectory.copy()]
+
     for schedule_entry in schedule:
         for step in range(schedule_entry.num_steps):
             match score_computation_method:
@@ -170,7 +172,6 @@ def solve(
                         sigma=schedule_entry.sigma,
                         problem=problem,
                         include_obstacles=True,
-                        magnitude_clip=optimizer_options.magnitude_clip,
                         **(schedule_entry.score_fn_kwargs or {}),
                     )
                 case ScoreComputationMethod.UNFACTORIZED_MPPI:
@@ -202,7 +203,6 @@ def solve(
                         problem=problem,
                         sigma=schedule_entry.sigma,
                         include_obstacles=True,
-                        magnitude_clip=optimizer_options.magnitude_clip,
                         **(schedule_entry.score_fn_kwargs or {}),
                     )
                     # add Voronoi guidance

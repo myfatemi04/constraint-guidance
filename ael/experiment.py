@@ -3,6 +3,7 @@ import json
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Literal, cast
 
@@ -32,9 +33,7 @@ class MainArgs:
         ScoreComputationMethod.APPROXIMATE_V0
     )
 
-    highlevel_search: HighLevelSearchMethod = (
-        HighLevelSearchMethod.cbs_spatial_approximation
-    )
+    highlevel_search: HighLevelSearchMethod = HighLevelSearchMethod.none
 
     problem_set: str = "dense"
     """ Loads problems from `./instances_data/instances_{problem_set}.json`. Can be comma-separated list. """
@@ -122,8 +121,11 @@ def run_problem_set(args: MainArgs, problem_set: str, save_dir: Path):
                 future = executor.submit(
                     cbs_spatial_approximation,
                     problem,
-                    args.score_computation_method,
-                    schedule,
+                    partial(
+                        solve,
+                        score_computation_method=args.score_computation_method,
+                        schedule=schedule,
+                    ),
                 )
                 futures.append(future)
             elif args.highlevel_search == HighLevelSearchMethod.none:

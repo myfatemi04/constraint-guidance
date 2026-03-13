@@ -70,7 +70,15 @@ def generate_simple_latex_table(
     return table
 
 
+def make_paths(base):
+    return {
+        k: f"results/{base}/{k}/table.csv"
+        for k in ["dense", "simple", "shelf", "connected_room"]
+    }
+
 if __name__ == "__main__":
+
+
     path_groups = {
         # without Voronoi initialization
         "000_no_voronoi_initialization": {
@@ -126,6 +134,7 @@ if __name__ == "__main__":
             k: f"results/2026-03-12/experiment_21-50-02_alm/{k}/table.csv"
             for k in ["dense", "simple", "shelf", "connected_room"]
         },
+        "012_voronoi_baseline": make_paths("2026-03-12/experiment_21-58-10_NONE_BASELINE_none")
     }
 
     name = sorted(path_groups.keys())[-1]

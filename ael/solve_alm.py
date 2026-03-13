@@ -155,7 +155,7 @@ def solve_alm(
         velocity_nu += rho * np.maximum(agent_velocity_constraint_functions, 0)
         rho *= rho_multiplier
 
-        trajectory_history.append(trajectory)
+        trajectory_history.append(trajectory.copy())
     t1 = time.time()
 
     constraint_satisfaction = compute_constraint_residuals(problem, trajectory)
@@ -169,12 +169,12 @@ def solve_alm(
 
 
 def test():
-    with open("instances_data/instances_connected_room.json") as f:
+    with open("instances_data/instances_dense.json") as f:
         data = json.load(f)
 
     t0 = time.time()
     problem = Problem.from_json(data[2])
-    trajectories = solve_alm(problem)
+    trajectories = solve_alm(problem).trajectories[-1]
     visualize(problem, plt.gca(), trajectories)
     t1 = time.time()
     print(f"Time taken: {t1 - t0}")
