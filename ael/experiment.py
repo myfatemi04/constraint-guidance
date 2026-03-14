@@ -1,5 +1,6 @@
 import enum
 import json
+import pickle
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -11,6 +12,7 @@ import numpy as np
 import pandas as pd
 import tqdm
 
+from ael.maps import load_instance_from_pickled_format
 from ael.problem import Problem
 from ael.solve import (
     DEFAULT_SCHEDULES,
@@ -71,10 +73,17 @@ def main(args: MainArgs):
 def run_problem_set(args: MainArgs, problem_set: str, save_dir: Path):
     save_dir.mkdir(parents=True, exist_ok=True)
 
-    with open(f"instances_data/instances_{problem_set}.json", "r") as f:
-        data = json.load(f)
+    if problem_set.startswith("larger__"):
+        tag = problem_set[len("larger__") :]
+        with open(f"instances_data/larger/{tag}_maps.pkl", "rb") as f:
+            data = pickle.load(f)
 
-    problems = [Problem.from_json(d, type="numpy") for d in data]
+        problems = [load_instance_from_pickled_format(instance) for instance in data]
+    else:
+        with open(f"instances_data/instances_{problem_set}.json", "r") as f:
+            data = json.load(f)
+
+        problems = [Problem.from_json(d, type="numpy") for d in data]
 
     if args.schedule == "default":
         schedule = DEFAULT_SCHEDULES[args.score_computation_method]
