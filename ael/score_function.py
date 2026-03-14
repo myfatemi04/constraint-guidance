@@ -462,7 +462,7 @@ def compute_score(
             compute_agent_circular_obstacle_score_from_problem(
                 problem, xy_T_B_D, sigma, n_integral=n_integral
             ).sum(axis=2)
-            / 3
+            / problem.num_circular_obstacles
         )
 
     if problem.num_axis_aligned_box_obstacles > 0:
@@ -473,29 +473,25 @@ def compute_score(
                 problem.agent_radii,
                 sigma,
             ).sum(axis=2)
-            / 3
+            / problem.num_axis_aligned_box_obstacles
         )
 
     score_T_B_D += (
         compute_agent_agent_score_from_problem(
             problem, xy_T_B_D, sigma, n_integral=n_integral
         ).sum(axis=2)
-        / 3
+        / problem.num_agents
     )
 
-    velocity_score = compute_velocity_score_batched_helper(
-        xy_T_B_D,
-        problem.agent_max_speeds,
-        np.ones(problem.num_agents) * sigma,
-        n_integral,
+    velocity_score = (
+        compute_velocity_score_batched_helper(
+            xy_T_B_D,
+            problem.agent_max_speeds,
+            np.ones(problem.num_agents) * sigma,
+            n_integral,
+        )
+        / 2
     )
-    # clip per-timestep velocity score to 0.025 to avoid oscillations?
-    # if sigma < 0.001:
-    #     velocity_score_magnitude_T_A = np.linalg.norm(velocity_score, axis=-1)
-    #     velocity_score = (
-    #         velocity_score
-    #         * np.minimum(1, 0.025 / (velocity_score_magnitude_T_A + 1e-8))[..., None]
-    #     )
 
     score_T_B_D += velocity_score
 

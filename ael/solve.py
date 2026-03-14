@@ -83,21 +83,45 @@ class ScoreComputationMethod(str, enum.Enum):
     NONE_BASELINE = "none_baseline"
 
 
+def make_exponential_schedule(
+    init_sigma,
+    end_sigma,
+    init_kinetic_weight,
+    end_kinetic_weight,
+    step_size,
+    steps,
+    n_integral,
+):
+    return [
+        ScheduleEntry(
+            sigma=init_sigma * (end_sigma / init_sigma) ** (i / steps),
+            step_size=step_size,
+            num_steps=1,
+            score_fn_kwargs=dict(
+                kinetic_weight=init_kinetic_weight
+                * (end_kinetic_weight / init_kinetic_weight) ** (i / steps),
+                n_integral=n_integral,
+            ),
+        )
+        for i in range(steps)
+    ]
+
+
 STEPS = 500
-DEFAULT_SCHEDULE_APPROXIMATE_V0 = [
-    ScheduleEntry(
-        sigma=0.2 * (0.001 / 0.2) ** (i / STEPS),
-        step_size=0.2,
-        num_steps=1,
-        score_fn_kwargs=dict(
-            # kinetic_weight=10 * (1 / 10) ** (i / STEPS),
-            kinetic_weight=10,
-            # kinetic_weight=1,
-            n_integral=10,
-        ),
-    )
-    for i in range(STEPS)
-]
+INIT_SIGMA = 0.3
+END_SIGMA = 0.001
+INIT_KINETIC_WEIGHT = 10
+END_KINETIC_WEIGHT = 10
+N_INTEGRAL = 10
+DEFAULT_SCHEDULE_APPROXIMATE_V0 = make_exponential_schedule(
+    init_sigma=INIT_SIGMA,
+    end_sigma=END_SIGMA,
+    init_kinetic_weight=INIT_KINETIC_WEIGHT,
+    end_kinetic_weight=END_KINETIC_WEIGHT,
+    step_size=0.8,
+    steps=STEPS,
+    n_integral=N_INTEGRAL,
+)
 
 DEFAULT_SCHEDULE_BOUNDARY_INTEGRALS = [
     ScheduleEntry(sigma=sigma, step_size=0.1, num_steps=200)

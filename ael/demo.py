@@ -203,11 +203,11 @@ def main(args: MainArgs):
     schedule = get_schedule(args)
     problem = get_problem(args)
 
-    # with open("instances_data/larger/dense_maps.pkl", "rb") as f:
-    #     data = pickle.load(f)
+    with open("instances_data/larger/dense_maps.pkl", "rb") as f:
+        data = pickle.load(f)
 
-    # problem = ael.maps.load_instance_from_pickled_format(data[1])
-    # problem.identifier = f"dense_maps__idx_1__num_robots_{problem.num_agents}"
+    problem = ael.maps.load_instance_from_pickled_format(data[1])
+    problem.identifier = f"dense_maps__idx_1__num_robots_{problem.num_agents}"
 
     # problem = ael.maps.get_sample_problem(
     #     key="highways", num_agents=args.num_robots or 3, dist=1.8, num_timesteps=128
