@@ -150,9 +150,46 @@ def run_problem_set(args: MainArgs, problem_set: str, save_dir: Path):
 
         for future in tqdm.tqdm(as_completed(futures), total=len(futures)):
             result = cast(Result, future.result())
-            agent_obstacle_max_residual = np.max(
-                result.constraint_satisfaction.agent_circular_obstacle_constraint_residuals
-            )
+            if (
+                result.constraint_satisfaction.agent_circular_obstacle_constraint_residuals.size
+                == 0
+                and result.constraint_satisfaction.agent_rectangular_obstacle_constraint_residuals.size
+                == 0
+            ):
+                print(
+                    f"Warning: No obstacle constraint residuals for problem {result.identifier}."
+                )
+                agent_obstacle_max_residual = 0
+            elif (
+                result.constraint_satisfaction.agent_circular_obstacle_constraint_residuals.size
+                == 0
+            ):
+                print(
+                    f"Warning: No circular obstacle constraint residuals for problem {result.identifier}."
+                )
+                agent_obstacle_max_residual = np.max(
+                    result.constraint_satisfaction.agent_rectangular_obstacle_constraint_residuals
+                )
+            elif (
+                result.constraint_satisfaction.agent_rectangular_obstacle_constraint_residuals.size
+                == 0
+            ):
+                print(
+                    f"Warning: No rectangular obstacle constraint residuals for problem {result.identifier}."
+                )
+                agent_obstacle_max_residual = np.max(
+                    result.constraint_satisfaction.agent_circular_obstacle_constraint_residuals
+                )
+            else:
+                resid = np.concatenate(
+                    [
+                        result.constraint_satisfaction.agent_circular_obstacle_constraint_residuals,
+                        result.constraint_satisfaction.agent_rectangular_obstacle_constraint_residuals,
+                    ]
+                )
+                agent_obstacle_max_residual = np.max(
+                    resid if resid.size > 0 else np.zeros(1)
+                )
             agent_agent_max_residual = np.max(
                 result.constraint_satisfaction.agent_agent_constraint_residuals
             )

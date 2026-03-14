@@ -10,11 +10,13 @@ import pandas as pd
 def generate_constraint_satisfaction_figure(
     df: pd.DataFrame, title: str, tolerance_levels=[1e-2, 1e-3, 1e-4, 1e-5]
 ):
-    plt.figure(figsize=(12, 4))
+    num_agents_list = sorted(df["num_robots"].unique())
+
+    plt.figure(figsize=(4 * len(num_agents_list), 4))
 
     # 3 rows, 3 columns: row == num_robots, col == constraint type.
-    for i_num_robots, num_robots in enumerate([3, 6, 9]):
-        plt.subplot(1, 3, 1 + i_num_robots)
+    for i_num_robots, num_robots in enumerate(num_agents_list):
+        plt.subplot(1, len(num_agents_list), 1 + i_num_robots)
         plt.title(f"{num_robots} Robots, {title}")
 
         for i_constraint_type, constraint_type in enumerate(
@@ -73,12 +75,12 @@ def generate_simple_latex_table(
 def make_paths(base):
     return {
         k: f"results/{base}/{k}/table.csv"
-        for k in ["dense", "simple", "shelf", "connected_room"]
+        for k in os.listdir(f"results/{base}")
+        if os.path.isdir(f"results/{base}/{k}")
     }
 
+
 if __name__ == "__main__":
-
-
     path_groups = {
         # without Voronoi initialization
         "000_no_voronoi_initialization": {
@@ -134,18 +136,20 @@ if __name__ == "__main__":
             k: f"results/2026-03-12/experiment_21-50-02_alm/{k}/table.csv"
             for k in ["dense", "simple", "shelf", "connected_room"]
         },
-        "012_voronoi_baseline": make_paths("2026-03-12/experiment_21-58-10_NONE_BASELINE_none")
+        "012_voronoi_baseline": make_paths(
+            "2026-03-12/experiment_21-58-10_NONE_BASELINE_none"
+        ),
+        "013_larger_maps": make_paths(
+            "2026-03-14/experiment_14-20-47_APPROXIMATE_V0_none"
+        ),
     }
 
     name = sorted(path_groups.keys())[-1]
     paths = path_groups[name]
 
     df_and_title = [
-        (pd.read_csv(paths[key]), title)
-        for key, title in zip(
-            ["dense", "connected_room", "shelf", "simple"],
-            ["Dense", "Connected Room", "Shelf", "Simple"],
-        )
+        (pd.read_csv(paths[key]), key.replace("_", " ").title())
+        for key in paths.keys()
         if os.path.exists(paths[key])
     ]
 
@@ -169,19 +173,19 @@ if __name__ == "__main__":
 
     for key in ["overall_success", "solve_time"]:
         # Generate table of solve times, in LaTeX.
+        num_agents = set()
+        for df, _ in df_and_title:
+            num_agents.update(df["num_robots"].unique())
         table_data = {
             "Problem Set": [t for (d, t) in df_and_title],
-            "3 agents": [
-                d[d["num_robots"] == 3][key].mean() for (d, t) in df_and_title
-            ],
-            "6 agents": [
-                d[d["num_robots"] == 6][key].mean() for (d, t) in df_and_title
-            ],
-            "9 agents": [
-                d[d["num_robots"] == 9][key].mean() for (d, t) in df_and_title
-            ],
+            **{
+                f"{n} agents": [
+                    d[d["num_robots"] == n][key].mean() for (d, t) in df_and_title
+                ]
+                for n in sorted(num_agents)
+            },
         }
 
-        pd.DataFrame(table_data).to_latex(
+        pd.DataFrame(table_data).fillna("-").to_latex(
             figures_dir / f"average_{key}.tex", index=False
         )
