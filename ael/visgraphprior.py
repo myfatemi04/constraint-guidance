@@ -452,12 +452,13 @@ def _create_voronoi_polygon(
     problem: Problem, min_x=-1.5, max_x=1.5, min_y=-1.5, max_y=1.5
 ) -> np.ndarray:
     polygons = []
+    min_point_distance = 0.005
 
     for obstacle_i in range(problem.num_circular_obstacles):
         x, y = problem.circular_obstacle_positions[obstacle_i]
         r = problem.circular_obstacle_radii[obstacle_i] + problem.agent_radii[0]
         circle_approximation_num_sides = max(
-            32, int(2 * np.pi * r / 0.02)
+            32, int(2 * np.pi * r / min_point_distance)
         )  # ensure that the distance between adjacent vertices is at most 0.02
         polygons.append(
             np.array(
@@ -475,8 +476,8 @@ def _create_voronoi_polygon(
         lower = problem.axis_aligned_box_obstacle_bounds[obstacle_i, 0]
         upper = problem.axis_aligned_box_obstacle_bounds[obstacle_i, 1]
         # add the agent radius to the box size
-        lower -= problem.agent_radii[0]
-        upper += problem.agent_radii[0]
+        lower = lower - problem.agent_radii[0]
+        upper = upper + problem.agent_radii[0]
         base_points = np.array(
             [
                 [lower[0], lower[1]],
@@ -485,35 +486,37 @@ def _create_voronoi_polygon(
                 [upper[0], lower[1]],
             ]
         )
-        perim = 2 * (upper[0] - lower[0] + upper[1] - lower[1])
-        circle_approximation_num_sides = max(
-            32, int(perim / 0.02)
-        )  # ensure that the distance between adjacent vertices is at most 0.02
+        horizontal_num_points = max(
+            32, int((upper[0] - lower[0]) / min_point_distance)
+        )  # ensure that the distance between adjacent vertices is at most min_point_distance
+        vertical_num_points = max(
+            32, int((upper[1] - lower[1]) / min_point_distance)
+        )  # ensure that the distance between adjacent vertices is at most min_point_distance
         polygons.append(
             np.array(
                 [
                     *np.linspace(
                         base_points[0],
                         base_points[1],
-                        circle_approximation_num_sides // 4,
+                        horizontal_num_points,
                         endpoint=False,
                     ),
                     *np.linspace(
                         base_points[1],
                         base_points[2],
-                        circle_approximation_num_sides // 4,
+                        vertical_num_points,
                         endpoint=False,
                     ),
                     *np.linspace(
                         base_points[2],
                         base_points[3],
-                        circle_approximation_num_sides // 4,
+                        horizontal_num_points,
                         endpoint=False,
                     ),
                     *np.linspace(
                         base_points[3],
                         base_points[0],
-                        circle_approximation_num_sides // 4,
+                        vertical_num_points,
                         endpoint=False,
                     ),
                 ]
