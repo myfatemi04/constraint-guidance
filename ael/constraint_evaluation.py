@@ -19,6 +19,39 @@ class ConstraintSatisfaction:
     velocity_constraint_residuals: np.ndarray
     """ Residuals for velocity constraints. If positive, represents the amount by which the velocity exceeds the maximum allowed velocity. Shape ([b], t-1, num_agents). """
 
+    def compute_max_residuals(self):
+        if (
+            self.agent_circular_obstacle_constraint_residuals.size == 0
+            and self.agent_rectangular_obstacle_constraint_residuals.size == 0
+        ):
+            agent_obstacle_max_residual = 0
+        elif self.agent_circular_obstacle_constraint_residuals.size == 0:
+            agent_obstacle_max_residual = np.max(
+                self.agent_rectangular_obstacle_constraint_residuals
+            )
+        elif self.agent_rectangular_obstacle_constraint_residuals.size == 0:
+            agent_obstacle_max_residual = np.max(
+                self.agent_circular_obstacle_constraint_residuals
+            )
+        else:
+            resid = np.concatenate(
+                [
+                    self.agent_circular_obstacle_constraint_residuals,
+                    self.agent_rectangular_obstacle_constraint_residuals,
+                ]
+            )
+            agent_obstacle_max_residual = np.max(
+                resid if resid.size > 0 else np.zeros(1)
+            )
+        agent_agent_max_residual = np.max(self.agent_agent_constraint_residuals)
+        velocity_max_residual = np.max(self.velocity_constraint_residuals)
+
+        return (
+            agent_obstacle_max_residual,
+            agent_agent_max_residual,
+            velocity_max_residual,
+        )
+
 
 def compute_agent_circular_obstacle_constraint_residuals(
     problem: Problem[np.ndarray], trajectory_b_T_A_D: np.ndarray

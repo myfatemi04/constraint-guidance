@@ -112,3 +112,18 @@ class Problem(Generic[TensorType]):
             if "sample_idx" in entry
             else None,
         )
+
+    def agent_subset(self, agent_indices: list[int]):
+        return Problem(
+            num_timesteps=self.num_timesteps,
+            agent_start_positions=self.agent_start_positions[agent_indices],
+            agent_end_positions=self.agent_end_positions[agent_indices],
+            agent_reference_trajectory=None
+            if self.agent_reference_trajectory is None
+            else self.agent_reference_trajectory[:, agent_indices],
+            agent_radii=self.agent_radii[agent_indices],
+            agent_max_speeds=self.agent_max_speeds[agent_indices],
+            circular_obstacle_positions=self.circular_obstacle_positions,
+            circular_obstacle_radii=self.circular_obstacle_radii,
+            axis_aligned_box_obstacle_bounds=self.axis_aligned_box_obstacle_bounds,
+        )

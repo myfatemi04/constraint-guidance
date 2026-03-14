@@ -42,7 +42,7 @@ class Result:
 @dataclass
 class OptimizerOptions:
     kind: Literal["adam", "sgd", "langevin", "langevin_adam", "langevin_momentum"] = (
-        "adam"
+        "langevin_adam"
     )
     """ The optimization algorithm to use. Adam is strongly recommended for stability."""
 
@@ -195,7 +195,7 @@ def solve(
     trajectories = [trajectory.copy()]
 
     global_step = 0
-    total_steps = sum(entry.num_steps for entry in schedule)
+    # total_steps = sum(entry.num_steps for entry in schedule)
     for schedule_entry in schedule:
         for step in range(schedule_entry.num_steps):
             global_step += 1

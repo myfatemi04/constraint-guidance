@@ -223,7 +223,7 @@ def compute_agent_obstacle_score_batched_helper(
         / d_a_o_B
         * numerator_B[None, :]
     )
-    score_D_B = 1 / (sigma_B**2) * numerator_D_B / denominator_B
+    score_D_B = 1 / (sigma_B**2) * numerator_D_B / (denominator_B + 1e-8)
 
     return score_D_B.T
 
