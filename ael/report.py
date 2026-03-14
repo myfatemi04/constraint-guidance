@@ -143,9 +143,16 @@ def main():
         "013_larger_maps": make_paths(
             "2026-03-14/experiment_14-20-47_APPROXIMATE_V0_none"
         ),
+        "014_original_maps_stochastic": make_paths(
+            "2026-03-14/experiment_17-19-32_APPROXIMATE_V0_none_langevin_adam"
+        ),
+        "015_larger_maps_stochastic": make_paths(
+            "2026-03-14/experiment_17-29-37_APPROXIMATE_V0_none"
+        ),
     }
 
-    name = sorted(path_groups.keys())[-1]
+    # name = sorted(path_groups.keys())[-1]
+    name = "014_original_maps_stochastic"
     paths = path_groups[name]
 
     df_and_title = [
@@ -157,18 +164,20 @@ def main():
     figures_dir = Path("figures") / name
     figures_dir.mkdir(parents=True, exist_ok=True)
 
-    plt.figure(figsize=(16, 4))
+    # plt.figure(figsize=(16, 4))
+    # for i, (df, title) in enumerate(df_and_title):
+    #     num_robots = df["num_robots"].unique()[0]
+    #     plt.subplot(1, 4, i + 1)
+    #     plot_tolerances(num_robots, [1e-2, 1e-3, 1e-4, 1e-5], df, title)
+    # plt.tight_layout()
+    # plt.savefig(figures_dir / "constraint_satisfaction.png")
+
     for i, (df, title) in enumerate(df_and_title):
-        num_robots = df["num_robots"].unique()[0]
-        plt.subplot(1, 4, i + 1)
-        plot_tolerances(num_robots, [1e-2, 1e-3, 1e-4, 1e-5], df, title)
-        # generate_constraint_satisfaction_figure(df, title)
-        # plt.savefig(
-        #     figures_dir
-        #     / f"constraint_satisfaction_{title.lower().replace(' ', '_')}.png"
-        # )
-    plt.tight_layout()
-    plt.savefig(figures_dir / "constraint_satisfaction.png")
+        generate_constraint_satisfaction_figure(df, title)
+        plt.savefig(
+            figures_dir
+            / f"constraint_satisfaction_{title.lower().replace(' ', '_')}.png"
+        )
 
     # Create table for success rate with tolerance of 1e-3.
     for df, _ in df_and_title:

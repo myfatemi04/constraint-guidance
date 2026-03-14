@@ -1,7 +1,7 @@
 """A CLI that demonstrates solving a problem from a problem set and saving the results."""
 
 import json
-import pickle
+import pickle  # noqa: F401
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 from loguru import logger
 
-import ael.maps
+import ael.maps  # noqa: F401
 from ael.problem import Problem
 from ael.solve import (
     DEFAULT_SCHEDULES,
@@ -117,7 +117,7 @@ def store_result(
     # Visualize optimization process.
     save_optimization_process_video(
         problem,
-        result.trajectories[::7],
+        result.trajectories[:: len(result.trajectories) // 64 or 1],
         save_dir / "optimization_process.mp4",
         rate=16,
     )
@@ -203,11 +203,11 @@ def main(args: MainArgs):
     schedule = get_schedule(args)
     problem = get_problem(args)
 
-    with open("instances_data/larger/dense_maps.pkl", "rb") as f:
-        data = pickle.load(f)
+    # with open("instances_data/larger/dense_maps.pkl", "rb") as f:
+    #     data = pickle.load(f)
 
-    problem = ael.maps.load_instance_from_pickled_format(data[1])
-    problem.identifier = f"dense_maps__idx_1__num_robots_{problem.num_agents}"
+    # problem = ael.maps.load_instance_from_pickled_format(data[1])
+    # problem.identifier = f"dense_maps__idx_1__num_robots_{problem.num_agents}"
 
     # problem = ael.maps.get_sample_problem(
     #     key="highways", num_agents=args.num_robots or 3, dist=1.8, num_timesteps=128

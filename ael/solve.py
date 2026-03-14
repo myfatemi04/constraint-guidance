@@ -65,7 +65,7 @@ class ScheduleEntry:
     """ Noise level for computing the convolved score. """
 
     step_size: float = 0.5
-    """ The size of the optimizer step. """
+    """ The size of the optimizer step. Anything less than 1 to ensure oscillatory eigenvalues decay """
 
     num_steps: int = 60
     """ The number of steps to operate under these parameters. """
@@ -83,16 +83,16 @@ class ScoreComputationMethod(str, enum.Enum):
     NONE_BASELINE = "none_baseline"
 
 
-STEPS = 750
+STEPS = 500
 DEFAULT_SCHEDULE_APPROXIMATE_V0 = [
     ScheduleEntry(
-        sigma=0.3 * (0.0001 / 1.0) ** (i / STEPS),
-        # sigma=0.1 * (0.01 / 0.1) ** (i / STEPS),
-        step_size=0.03 * (0.01 / 0.03) ** (i / STEPS),
+        sigma=0.2 * (0.001 / 0.2) ** (i / STEPS),
+        step_size=0.2,
         num_steps=1,
         score_fn_kwargs=dict(
             # kinetic_weight=10 * (1 / 10) ** (i / STEPS),
-            kinetic_weight=1,
+            kinetic_weight=10,
+            # kinetic_weight=1,
             n_integral=10,
         ),
     )
@@ -284,25 +284,24 @@ def solve(
 
                 case "langevin_adam":
                     langevin_step_size = schedule_entry.sigma**2
-                    step = score * langevin_step_size + np.sqrt(
-                        2 * langevin_step_size
-                    ) * np.random.randn(*score.shape)
-
+                    noise = np.sqrt(2 * langevin_step_size) * np.random.randn(
+                        *score.shape
+                    )
+                    # update moments
+                    score_step = langevin_step_size * score
                     score_m = (
                         optimizer_options.beta1 * score_m
-                        + (1 - optimizer_options.beta1) * step
+                        + (1 - optimizer_options.beta1) * score_step
                     )
                     score_v = optimizer_options.beta2 * score_v + (
                         1 - optimizer_options.beta2
-                    ) * (step**2)
+                    ) * (score_step**2)
                     score_m_hat = score_m / (1 - beta1_t)
                     score_v_hat = score_v / (1 - beta2_t)
-                    trajectory += (
-                        # anything less than 1 to ensure oscillatory eigenvalues decay
-                        0.9
-                        * score_m_hat
-                        / (np.sqrt(score_v_hat) + optimizer_options.eps)
+                    score_scaled = score_m_hat / (
+                        np.sqrt(score_v_hat) + optimizer_options.eps
                     )
+                    trajectory += schedule_entry.step_size * (score_scaled + noise)
 
                 case "langevin_momentum":
                     langevin_step_size = schedule_entry.sigma**2
@@ -323,11 +322,11 @@ def solve(
 
                     trajectory += (
                         # anything less than 1 to ensure oscillatory eigenvalues decay
-                        0.9
+                        schedule_entry.step_size
                         * (
                             langevin_step_size * score_m_hat
                             + np.sqrt(2 * langevin_step_size) * noise
-                        )
+                        ),
                     )
 
             trajectory[0] = start_positions
