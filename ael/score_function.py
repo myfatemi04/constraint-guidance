@@ -320,12 +320,14 @@ def compute_velocity_score_batched_helper(
 
 @lru_cache(maxsize=16)
 def get_kinetic_energy_kernel(N: int, sigma: float):
-    velocity_kernel = np.zeros((N - 1, N))
-    velocity_kernel[:, 1:] = np.eye(N - 1)
-    velocity_kernel -= np.eye(N - 1, N)
-    VTV = velocity_kernel.T @ velocity_kernel
-    score_kernel = -np.linalg.inv(VTV + np.eye(N) / (sigma**2)) @ VTV / (sigma**2)
-    return score_kernel
+    V = np.zeros((N - 1, N))
+    V[:, 1:] = np.eye(N - 1)
+    V -= np.eye(N - 1, N)
+    sigma_B = 1.0
+
+    K = (np.linalg.inv(sigma_B**2 * V.T @ V + np.eye(N)) - np.eye(N)) / (sigma_B**2)
+
+    return K
 
 
 def compute_kinetic_energy_score(xy_T_B_D: np.ndarray, sigma):
@@ -439,8 +441,7 @@ def compute_agent_obstacle_score_rectangular_obstacles(
     score_T_A_O_D, likelihood_T_A_O = box_exclusion_score_and_likelihood(
         xy_T_A_1_D, boxes_A_O_2_D, sigma
     )
-    score_T_A_D = score_T_A_O_D.sum(axis=-2)
-    return score_T_A_D
+    return score_T_A_O_D
 
 
 def compute_score(
@@ -457,31 +458,46 @@ def compute_score(
     score_T_B_D = np.zeros_like(xy_T_B_D)
 
     if problem.num_circular_obstacles > 0:
-        score_T_B_D += compute_agent_circular_obstacle_score_from_problem(
-            problem, xy_T_B_D, sigma, n_integral=n_integral
-        ).sum(axis=2)
+        score_T_B_D += (
+            compute_agent_circular_obstacle_score_from_problem(
+                problem, xy_T_B_D, sigma, n_integral=n_integral
+            ).sum(axis=2)
+            / 3
+        )
 
     if problem.num_axis_aligned_box_obstacles > 0:
-        score_T_B_D += compute_agent_obstacle_score_rectangular_obstacles(
-            xy_T_B_D,
-            problem.axis_aligned_box_obstacle_bounds,
-            problem.agent_radii,
-            sigma,
+        score_T_B_D += (
+            compute_agent_obstacle_score_rectangular_obstacles(
+                xy_T_B_D,
+                problem.axis_aligned_box_obstacle_bounds,
+                problem.agent_radii,
+                sigma,
+            ).sum(axis=2)
+            / 3
         )
-
-    score_T_B_D += compute_agent_agent_score_from_problem(
-        problem, xy_T_B_D, sigma, n_integral=n_integral
-    ).sum(axis=2)
 
     score_T_B_D += (
-        compute_velocity_score_batched_helper(
-            xy_T_B_D,
-            problem.agent_max_speeds,
-            np.ones(problem.num_agents) * sigma,
-            n_integral,
-        )
-        * 0.1
+        compute_agent_agent_score_from_problem(
+            problem, xy_T_B_D, sigma, n_integral=n_integral
+        ).sum(axis=2)
+        / 3
     )
+
+    velocity_score = compute_velocity_score_batched_helper(
+        xy_T_B_D,
+        problem.agent_max_speeds,
+        np.ones(problem.num_agents) * sigma,
+        n_integral,
+    )
+    # clip per-timestep velocity score to 0.025 to avoid oscillations?
+    # if sigma < 0.001:
+    #     velocity_score_magnitude_T_A = np.linalg.norm(velocity_score, axis=-1)
+    #     velocity_score = (
+    #         velocity_score
+    #         * np.minimum(1, 0.025 / (velocity_score_magnitude_T_A + 1e-8))[..., None]
+    #     )
+
+    score_T_B_D += velocity_score
 
     score_T_B_D = score_T_B_D + kinetic_weight * compute_kinetic_energy_score(
         xy_T_B_D, sigma

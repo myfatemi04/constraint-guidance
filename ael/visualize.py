@@ -122,7 +122,10 @@ def save_video(problem: Problem, agent_positions: np.ndarray, path: str | Path):
 
 
 def save_optimization_process_video(
-    problem: Problem, agent_positions: np.ndarray | list[np.ndarray], path: str | Path
+    problem: Problem,
+    agent_positions: np.ndarray | list[np.ndarray],
+    path: str | Path,
+    rate=4,
 ):
     buf = io.BytesIO()
     images = []
@@ -140,7 +143,7 @@ def save_optimization_process_video(
         buf.seek(0)
 
     with av.open(path, "w") as container:
-        stream = container.add_stream("h264", rate=4)
+        stream = container.add_stream("h264", rate=rate)
         stream.width = images[0].width
         stream.height = images[0].height
         for img in images:

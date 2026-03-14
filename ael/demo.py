@@ -116,8 +116,12 @@ def store_result(
     plt.clf()
     # Visualize optimization process.
     save_optimization_process_video(
-        problem, result.trajectories[::8], save_dir / "optimization_process.mp4"
+        problem,
+        result.trajectories[::7],
+        save_dir / "optimization_process.mp4",
+        rate=16,
     )
+    return
     # Visualize final trajectory.
     save_video(problem, result.trajectories[-1], save_dir / "final_trajectory.mp4")
     # Also save GIFs.

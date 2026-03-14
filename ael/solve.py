@@ -41,7 +41,9 @@ class Result:
 
 @dataclass
 class OptimizerOptions:
-    kind: Literal["adam", "sgd"] = "adam"
+    kind: Literal["adam", "sgd", "langevin", "langevin_adam", "langevin_momentum"] = (
+        "adam"
+    )
     """ The optimization algorithm to use. Adam is strongly recommended for stability."""
 
     beta1: float = 0.9
@@ -81,15 +83,16 @@ class ScoreComputationMethod(str, enum.Enum):
     NONE_BASELINE = "none_baseline"
 
 
-STEPS = 500
+STEPS = 750
 DEFAULT_SCHEDULE_APPROXIMATE_V0 = [
     ScheduleEntry(
-        sigma=0.1 * (0.01 / 0.1) ** (i / STEPS),
+        sigma=0.3 * (0.0001 / 1.0) ** (i / STEPS),
+        # sigma=0.1 * (0.01 / 0.1) ** (i / STEPS),
         step_size=0.03 * (0.01 / 0.03) ** (i / STEPS),
         num_steps=1,
         score_fn_kwargs=dict(
             # kinetic_weight=10 * (1 / 10) ** (i / STEPS),
-            kinetic_weight=0.01,
+            kinetic_weight=1,
             n_integral=10,
         ),
     )
@@ -167,8 +170,11 @@ def solve(
 
     trajectories = [trajectory.copy()]
 
+    global_step = 0
+    total_steps = sum(entry.num_steps for entry in schedule)
     for schedule_entry in schedule:
         for step in range(schedule_entry.num_steps):
+            global_step += 1
             match score_computation_method:
                 case ScoreComputationMethod.APPROXIMATE_V0:
                     score = compute_score(
@@ -246,13 +252,14 @@ def solve(
                 case "sgd":
                     trajectory += schedule_entry.step_size * score
                 case "adam":
+                    step = score
                     score_m = (
                         optimizer_options.beta1 * score_m
-                        + (1 - optimizer_options.beta1) * score
+                        + (1 - optimizer_options.beta1) * step
                     )
                     score_v = optimizer_options.beta2 * score_v + (
                         1 - optimizer_options.beta2
-                    ) * (score**2)
+                    ) * (step**2)
                     score_m_hat = score_m / (1 - beta1_t)
                     score_v_hat = score_v / (1 - beta2_t)
                     trajectory += (
@@ -260,13 +267,67 @@ def solve(
                         * score_m_hat
                         / (np.sqrt(score_v_hat) + optimizer_options.eps)
                     )
-                case "langevin":
-                    ss = schedule_entry.step_size
-                    score_norm = np.linalg.norm(score, axis=-1, keepdims=True)
-                    score_multiplier = np.minimum(1, 100 / score_norm)
-                    score = score * score_multiplier
-                    trajectory += ss * score + np.sqrt(ss) * np.random.randn(
+
+                case "langevin_sgd":
+                    langevin_step_size = schedule_entry.sigma**2
+                    noise = np.sqrt(2 * schedule_entry.sigma**2) * np.random.randn(
                         *score.shape
+                    )
+                    max_update_size = 1
+                    update = langevin_step_size * score + noise
+                    for agent_i in range(trajectory.shape[1]):
+                        update_size = np.linalg.norm(update[:, agent_i, :])
+                        if update_size > max_update_size:
+                            update[:, agent_i, :] /= update_size / max_update_size
+
+                    trajectory += update
+
+                case "langevin_adam":
+                    langevin_step_size = schedule_entry.sigma**2
+                    step = score * langevin_step_size + np.sqrt(
+                        2 * langevin_step_size
+                    ) * np.random.randn(*score.shape)
+
+                    score_m = (
+                        optimizer_options.beta1 * score_m
+                        + (1 - optimizer_options.beta1) * step
+                    )
+                    score_v = optimizer_options.beta2 * score_v + (
+                        1 - optimizer_options.beta2
+                    ) * (step**2)
+                    score_m_hat = score_m / (1 - beta1_t)
+                    score_v_hat = score_v / (1 - beta2_t)
+                    trajectory += (
+                        # anything less than 1 to ensure oscillatory eigenvalues decay
+                        0.9
+                        * score_m_hat
+                        / (np.sqrt(score_v_hat) + optimizer_options.eps)
+                    )
+
+                case "langevin_momentum":
+                    langevin_step_size = schedule_entry.sigma**2
+                    noise = np.random.randn(*score.shape)
+                    # scale score magnitude to 1
+                    for agent_i in range(score.shape[1]):
+                        score_size = np.linalg.norm(score[:, agent_i, :])
+                        if score_size > optimizer_options.magnitude_clip:
+                            score[:, agent_i, :] *= (
+                                optimizer_options.magnitude_clip / score_size
+                            )
+
+                    score_m = (
+                        optimizer_options.beta1 * score_m
+                        + (1 - optimizer_options.beta1) * score
+                    )
+                    score_m_hat = score_m / (1 - beta1_t)
+
+                    trajectory += (
+                        # anything less than 1 to ensure oscillatory eigenvalues decay
+                        0.9
+                        * (
+                            langevin_step_size * score_m_hat
+                            + np.sqrt(2 * langevin_step_size) * noise
+                        )
                     )
 
             trajectory[0] = start_positions
