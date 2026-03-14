@@ -1,6 +1,7 @@
 """A CLI that demonstrates solving a problem from a problem set and saving the results."""
 
 import json
+import pickle
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 import numpy as np
 from loguru import logger
 
+import ael.maps
 from ael.problem import Problem
 from ael.solve import (
     DEFAULT_SCHEDULES,
@@ -195,12 +197,17 @@ def get_schedule(args: MainArgs):
 
 def main(args: MainArgs):
     schedule = get_schedule(args)
-    # problem = get_problem(args)
-    import ael.maps
+    problem = get_problem(args)
 
-    problem = ael.maps.get_sample_problem(
-        key="highways", num_agents=args.num_robots or 3, dist=1.8, num_timesteps=128
-    )
+    with open("instances_data/larger/basic_maps.pkl", "rb") as f:
+        data = pickle.load(f)
+
+    problem = ael.maps.load_instance_from_pickled_format(data[1])
+    problem.identifier = f"basic_maps__idx_1__num_robots_{problem.num_agents}"
+
+    # problem = ael.maps.get_sample_problem(
+    #     key="highways", num_agents=args.num_robots or 3, dist=1.8, num_timesteps=128
+    # )
 
     result = solve(
         problem=problem,
