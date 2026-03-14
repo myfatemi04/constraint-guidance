@@ -7,6 +7,31 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
+def plot_tolerances(num_robots, tolerance_levels, df, title):
+    plt.title(f"{num_robots} Robots, {title}")
+
+    for i_constraint_type, constraint_type in enumerate(
+        ["agent_obstacle", "agent_agent", "velocity"]
+    ):
+        tolerance_results = []
+
+        for tol in tolerance_levels:
+            subset = df[df["num_robots"] == num_robots]
+            satisfied = subset[f"{constraint_type}_max_residual"] < tol
+            fraction_satisfied = satisfied.sum() / len(subset)
+            tolerance_results.append(fraction_satisfied)
+
+        plt.plot(tolerance_levels, tolerance_results, marker="o", label=constraint_type)
+
+    plt.xscale("log")
+    plt.yscale("linear")
+    plt.xlabel("Constraint Satisfaction Tolerance")
+    plt.ylabel("Fraction of Problems Satisfied")
+    plt.ylim(0, 1.05)
+    plt.grid()
+    plt.legend()
+
+
 def generate_constraint_satisfaction_figure(
     df: pd.DataFrame, title: str, tolerance_levels=[1e-2, 1e-3, 1e-4, 1e-5]
 ):
@@ -17,31 +42,7 @@ def generate_constraint_satisfaction_figure(
     # 3 rows, 3 columns: row == num_robots, col == constraint type.
     for i_num_robots, num_robots in enumerate(num_agents_list):
         plt.subplot(1, len(num_agents_list), 1 + i_num_robots)
-        plt.title(f"{num_robots} Robots, {title}")
-
-        for i_constraint_type, constraint_type in enumerate(
-            ["agent_obstacle", "agent_agent", "velocity"]
-        ):
-            tolerance_results = []
-
-            for tol in tolerance_levels:
-                subset = df[df["num_robots"] == num_robots]
-                satisfied = subset[f"{constraint_type}_max_residual"] < tol
-                fraction_satisfied = satisfied.sum() / len(subset)
-                tolerance_results.append(fraction_satisfied)
-
-            plt.plot(
-                tolerance_levels, tolerance_results, marker="o", label=constraint_type
-            )
-
-        plt.xscale("log")
-        plt.yscale("linear")
-        plt.xlabel("Constraint Satisfaction Tolerance")
-        plt.ylabel("Fraction of Problems Satisfied")
-        plt.title(f"Number of Robots: {num_robots}")
-        plt.ylim(0, 1.05)
-        plt.grid()
-        plt.legend()
+        plot_tolerances(num_robots, tolerance_levels, df, title)
 
     plt.tight_layout()
     # plt.show()
@@ -80,7 +81,7 @@ def make_paths(base):
     }
 
 
-if __name__ == "__main__":
+def main():
     path_groups = {
         # without Voronoi initialization
         "000_no_voronoi_initialization": {
@@ -156,12 +157,18 @@ if __name__ == "__main__":
     figures_dir = Path("figures") / name
     figures_dir.mkdir(parents=True, exist_ok=True)
 
-    for df, title in df_and_title:
-        generate_constraint_satisfaction_figure(df, title)
-        plt.savefig(
-            figures_dir
-            / f"constraint_satisfaction_{title.lower().replace(' ', '_')}.png"
-        )
+    plt.figure(figsize=(16, 4))
+    for i, (df, title) in enumerate(df_and_title):
+        num_robots = df["num_robots"].unique()[0]
+        plt.subplot(1, 4, i + 1)
+        plot_tolerances(num_robots, [1e-2, 1e-3, 1e-4, 1e-5], df, title)
+        # generate_constraint_satisfaction_figure(df, title)
+        # plt.savefig(
+        #     figures_dir
+        #     / f"constraint_satisfaction_{title.lower().replace(' ', '_')}.png"
+        # )
+    plt.tight_layout()
+    plt.savefig(figures_dir / "constraint_satisfaction.png")
 
     # Create table for success rate with tolerance of 1e-3.
     for df, _ in df_and_title:
@@ -189,3 +196,7 @@ if __name__ == "__main__":
         pd.DataFrame(table_data).fillna("-").to_latex(
             figures_dir / f"average_{key}.tex", index=False
         )
+
+
+if __name__ == "__main__":
+    main()
