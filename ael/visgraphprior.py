@@ -385,13 +385,16 @@ def _get_graph_without_vertices_in_obstacles(
 
 def _remove_tree_vertices(graph):
     """if a node is reached which has no *other* children, it is removed from the graph. assumes a connected graph."""
-    rm = [0]
-    while len(rm) > 0:
-        rm = [node for node in graph if len(graph[node]) == 1]
-        for node in rm:
-            neighbor = next(iter(graph[node]))
-            graph[neighbor].remove(node)
-            del graph[node]
+    run_again = True
+
+    while run_again:
+        run_again = False
+        for node in list(graph):
+            if len(graph[node]) == 1:
+                neighbor = next(iter(graph[node]))
+                graph[neighbor].remove(node)
+                del graph[node]
+                run_again = True
 
 
 def _voronoi_plot_2d(vor, ax, obstacle_positions, obstacle_radii, **kw):
@@ -446,19 +449,16 @@ def _voronoi_plot_2d(vor, ax, obstacle_positions, obstacle_radii, **kw):
 
 
 def _create_voronoi_polygon(
-    problem: Problem,
-    circle_approximation_num_sides: int,
-    min_x=-1.5,
-    max_x=1.5,
-    min_y=-1.5,
-    max_y=1.5,
+    problem: Problem, min_x=-1.5, max_x=1.5, min_y=-1.5, max_y=1.5
 ) -> np.ndarray:
     polygons = []
-    circle_approximation_num_sides = 32
 
     for obstacle_i in range(problem.num_circular_obstacles):
         x, y = problem.circular_obstacle_positions[obstacle_i]
         r = problem.circular_obstacle_radii[obstacle_i] + problem.agent_radii[0]
+        circle_approximation_num_sides = max(
+            32, int(2 * np.pi * r / 0.02)
+        )  # ensure that the distance between adjacent vertices is at most 0.02
         polygons.append(
             np.array(
                 [
@@ -485,6 +485,10 @@ def _create_voronoi_polygon(
                 [upper[0], lower[1]],
             ]
         )
+        perim = 2 * (upper[0] - lower[0] + upper[1] - lower[1])
+        circle_approximation_num_sides = max(
+            32, int(perim / 0.02)
+        )  # ensure that the distance between adjacent vertices is at most 0.02
         polygons.append(
             np.array(
                 [
@@ -540,7 +544,7 @@ def main_voronoi():
     max_x = 1.5
     min_y = -1.5
     max_y = 1.5
-    all_points = _create_voronoi_polygon(problem, 32, min_x, max_x, min_y, max_y)
+    all_points = _create_voronoi_polygon(problem, min_x, max_x, min_y, max_y)
 
     visualize(problem, plt.gca(), start_markersize=2, end_markersize=2)
     plt.plot(
@@ -672,11 +676,9 @@ def _get_voronoi_graph(problem: Problem, voronoi: Voronoi) -> nx.Graph:
     return graph
 
 
-def make_roadmap(
-    problem: Problem, circle_approximation_num_sides: int = 32
-) -> nx.Graph:
+def make_roadmap(problem: Problem) -> nx.Graph:
     """Generates sample trajectories, using num_trajectories for each agent."""
-    all_points = _create_voronoi_polygon(problem, circle_approximation_num_sides)
+    all_points = _create_voronoi_polygon(problem)
     vor = Voronoi(all_points)
     return _get_voronoi_graph(problem, vor)
 

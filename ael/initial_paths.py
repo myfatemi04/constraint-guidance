@@ -24,12 +24,24 @@ def get_initial_paths_by_agent(
     end_positions = problem.agent_end_positions
     target_paths_by_agent = []
     for agent_index in range(problem.num_agents):
-        paths = generate_paths(
-            graph,
-            start_positions[agent_index],
-            end_positions[agent_index],
-            num_paths=5,
-        )
+        try:
+            paths = generate_paths(
+                graph,
+                start_positions[agent_index],
+                end_positions[agent_index],
+                num_paths=5,
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to generate paths for agent {agent_index}, using straight line path: {e}"
+            )
+            paths = [
+                np.linspace(
+                    start_positions[agent_index],
+                    end_positions[agent_index],
+                    num=problem.num_timesteps,
+                )
+            ]
         paths_interpolated = []
         for path in paths:
             for speed in [
