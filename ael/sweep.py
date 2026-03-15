@@ -61,20 +61,28 @@ def run_problem_set(args: MainArgs):
 
         problems = [ael.problem.Problem.from_json(d, type="numpy") for d in data]
 
-    for num_agents in range(10, 22, 2):
+    steps = 500
+    for num_agents in [10]:
+        # for num_agents in range(10, 22, 2):
         for problem in problems:
             assert problem.num_agents >= num_agents, (
                 f"Problem {problem.identifier} has only {problem.num_agents} agents, cannot use {num_agents} agents."
             )
 
-        for steps in [100, 200, 500, 1000, 2000]:
-            tag = f"num_agents_{num_agents}__steps_{steps}"
+        # for steps in [100, 200, 500, 1000, 2000]:
+        for init_sigma, end_sigma in [
+            (0.1, 0.01),
+            (0.2, 0.01),
+            (0.3, 0.01),
+            (0.5, 0.01),
+        ]:
+            tag = f"init_sigma_{init_sigma}__end_sigma_{end_sigma}__steps_{steps}__num_agents_{num_agents}"
             save_dir = root_save_dir / tag
             save_dir.mkdir(parents=True, exist_ok=True)
 
             schedule_args = {
-                "init_sigma": 0.3,
-                "end_sigma": 0.001,
+                "init_sigma": init_sigma,
+                "end_sigma": end_sigma,
                 "init_kinetic_weight": 10,
                 "end_kinetic_weight": 1,
                 "step_size": 0.8,
